@@ -1,0 +1,7 @@
+{
+    email kenechukwuudeh.tech@gmail.com
+}
+
+n8n.tuppli.com {
+    reverse_proxy n8n:5678
+}

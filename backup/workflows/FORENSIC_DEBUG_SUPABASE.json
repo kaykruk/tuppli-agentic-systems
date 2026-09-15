@@ -1,0 +1,90 @@
+{
+    "name": "FORENSIC_DEBUG_SUPABASE",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "forensic-debug-supabase",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "debug-sup-webhook",
+            "name": "Debug Sup Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ],
+            "webhookId": "forensic-debug-supabase-webhook"
+        },
+        {
+            "parameters": {
+                "operation": "executeQuery",
+                "query": "SELECT 1 as connected",
+                "options": {}
+            },
+            "id": "debug-sup-query",
+            "name": "Debug Supabase Query",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                450,
+                300
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "supabase-credentials",
+                    "name": "Supabase account"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "{\n  \"status\": \"supabase_ok\",\n  \"result\": {{ JSON.stringify($input.first().json) }},\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+                "options": {}
+            },
+            "id": "debug-sup-response",
+            "name": "Debug Sup Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Debug Sup Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Debug Supabase Query",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Debug Supabase Query": {
+            "main": [
+                [
+                    {
+                        "node": "Debug Sup Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "active": false, "tags": [],
+    "triggerCount": 1,
+    "versionId": "1",
+    "active": true
+}

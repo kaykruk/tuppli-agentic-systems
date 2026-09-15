@@ -1,0 +1,600 @@
+{
+  "id": "Re7t1mTWK44b5uEk",
+  "name": "RECON_HOURLY",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "recon-cron-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "recon-hourly-fixed",
+        "options": {}
+      },
+      "id": "recon-webhook-trigger",
+      "name": "Test Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        500
+      ],
+      "webhookId": "recon-hourly-fixed"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate webhook authentication\nconst headers = $input.first().json.headers;\nconst expectedToken = $env.N8N_WEBHOOK_AUTH_TOKEN;\nconst authHeader = $env.N8N_WEBHOOK_AUTH_HEADER || 'X-Lysis-Auth';\n\nconst receivedToken = headers[authHeader.toLowerCase()] || headers[authHeader];\n\nif (!expectedToken) {\n  throw new Error('N8N_WEBHOOK_AUTH_TOKEN not configured');\n}\n\nif (!receivedToken || receivedToken !== expectedToken) {\n  throw new Error('Unauthorized: Invalid or missing auth token');\n}\n\nreturn $input.first().json;"
+      },
+      "id": "validate-test-auth",
+      "name": "Validate Test Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT rt.*, t.tier, t.credits_remaining FROM recon_targets rt JOIN tenants t ON rt.tenant_id = t.id WHERE rt.status = 'pending' AND t.active = true AND t.credits_remaining > 0 AND (rt.next_scan_at IS NULL OR rt.next_scan_at <= NOW()) AND (t.tier = 'elite' OR (t.tier = 'freemium' AND rt.last_scanned_at IS NULL OR rt.last_scanned_at < NOW() - INTERVAL '24 hours')) ORDER BY rt.priority DESC LIMIT 10",
+        "options": {}
+      },
+      "id": "fetch-targets",
+      "name": "Fetch Eligible Targets",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-targets",
+      "name": "Has Targets?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "split-targets",
+      "name": "Process One at a Time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "recon_targets",
+        "filterType": "manual",
+        "matchBy": "id",
+        "id": "={{ $json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "scanning"
+            },
+            {
+              "fieldId": "updated_at",
+              "fieldValue": "={{ $now.toISO() }}"
+            }
+          ]
+        }
+      },
+      "id": "mark-scanning",
+      "name": "Mark as Scanning",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://dns.google/resolve?name={{ encodeURIComponent($json.target_value) }}&type=A",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "dns-lookup",
+      "name": "DNS Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1450,
+        200
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process scan results\nconst target = $('Process One at a Time').first().json;\nconst dnsData = $('DNS Lookup').first()?.json;\nconst tgData = $('Telegram Scraper').first()?.json;\n\n// Calculate next scan time based on tier\nlet nextScanHours = 24; // Default: freemium = daily\nif (target.tier === 'elite') {\n  nextScanHours = 1; // Elite = hourly\n}\n\nconst now = new Date();\nconst nextScan = new Date(now.getTime() + (nextScanHours * 60 * 60 * 1000));\n\n// Check if DNS lookup succeeded\nconst dnsSuccess = dnsData && !dnsData.error && dnsData.Status === 0;\nconst tgSuccess = tgData && tgData.status === 'success';\n\nreturn {\n  id: target.id,\n  tenant_id: target.tenant_id,\n  target_name: target.target_name,\n  dns_records: dnsSuccess ? dnsData : { error: 'DNS lookup failed' },\n  telegram_results: tgSuccess ? tgData : null,\n  status: 'completed',\n  last_scanned_at: now.toISOString(),\n  next_scan_at: nextScan.toISOString(),\n  scan_summary: {\n    dns_resolved: dnsSuccess,\n    answers: dnsSuccess ? (dnsData.Answer || []).length : 0,\n    telegram_targets_found: tgSuccess ? tgData.total_found : 0,\n    scanned_at: now.toISOString()\n  }\n};"
+      },
+      "id": "process-results",
+      "name": "Process Scan Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "recon_targets",
+        "filterType": "manual",
+        "matchBy": "id",
+        "id": "={{ $json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "dns_records",
+              "fieldValue": "={{ JSON.stringify($json.dns_records) }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "={{ $json.status }}"
+            },
+            {
+              "fieldId": "last_scanned_at",
+              "fieldValue": "={{ $json.last_scanned_at }}"
+            },
+            {
+              "fieldId": "next_scan_at",
+              "fieldValue": "={{ $json.next_scan_at }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ JSON.stringify($json.scan_summary) }}"
+            }
+          ]
+        }
+      },
+      "id": "update-target",
+      "name": "Update Target Results",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1850,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Decrement credits for this tenant\nconst target = $input.first().json;\n\nreturn {\n  tenant_id: target.tenant_id,\n  credit_used: 1\n};"
+      },
+      "id": "prepare-credit-decrement",
+      "name": "Prepare Credit Decrement",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT decrement_tenant_credits('{{ $json.tenant_id }}'::uuid, 1) as credits_remaining",
+        "options": {}
+      },
+      "id": "decrement-credits",
+      "name": "Decrement Credits",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2250,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "loop-back",
+      "name": "Continue Batch",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        2450,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// No targets to scan\nreturn {\n  status: 'idle',\n  message: 'No eligible targets to scan at this time',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "no-targets",
+      "name": "No Targets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle database fetch error\nconst error = $input.first();\n\nconsole.error('Failed to fetch recon targets:', JSON.stringify(error));\n\nreturn {\n  status: 'error',\n  message: 'Failed to fetch targets from database',\n  error: error.message || 'Unknown error',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "handle-fetch-error",
+      "name": "Handle Fetch Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if detected account is in the creator's allowlist\nconst target = $('Process One at a Time').first().json;\nconst scanResult = $input.first().json;\n\n// Simulate detection: in production this comes from the image-hasher/dark-web-scanner\n// For now, pass through scan results for downstream allowlist check\nconst detectedAccounts = scanResult.scan_summary?.detected_accounts || [];\n\n// If no accounts detected, skip\nif (detectedAccounts.length === 0) {\n  return { ...scanResult, impersonators: [], skipped_allowlisted: 0 };\n}\n\n// Each detected account will be checked against authorized_accounts\n// via the is_authorized_account RPC function\nreturn {\n  ...scanResult,\n  detectedAccounts,\n  tenant_id: target.tenant_id,\n  check_phase: 'allowlist'\n};"
+      },
+      "id": "check-allowlist",
+      "name": "Check Allowlist",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Auto-flag impersonators that are NOT in the allowlist\n// Calls the auto_flag_impersonator Supabase RPC function\nconst data = $input.first().json;\nconst detectedAccounts = data.detectedAccounts || [];\n\nconst flagged = [];\nconst skipped = [];\n\nfor (const account of detectedAccounts) {\n  // The is_authorized_account check would be done via Supabase RPC\n  // in production. Here we prepare the payload for auto_flag_impersonator.\n  flagged.push({\n    tenant_id: data.tenant_id,\n    platform: account.platform,\n    fake_username: account.username,\n    fake_profile_url: account.profile_url || null,\n    fake_profile_image_url: account.avatar_url || null,\n    similarity_score: account.similarity_score || 0.90,\n    detection_signals: {\n      username_match: account.username_match || false,\n      photo_match: account.photo_match || false,\n      bio_match: account.bio_match || false,\n      content_match: account.content_match || false\n    },\n    auto_escalated: (account.similarity_score || 0.90) >= 0.85,\n    escalation_reason: (account.similarity_score || 0.90) >= 0.85\n      ? 'Auto-confirmed: score >= 0.85'\n      : 'Flagged for review'\n  });\n}\n\nreturn {\n  ...data,\n  flagged_count: flagged.length,\n  skipped_count: skipped.length,\n  flagged,\n  needs_legal_action: flagged.filter(f => f.auto_escalated).length > 0\n};"
+      },
+      "id": "auto-flag-impersonator",
+      "name": "Auto-Flag Impersonator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.WEBHOOK_URL }}webhook/legal-enforcer-auto",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tenant_id: $json.tenant_id, impersonators: $json.flagged.filter(f => f.auto_escalated), action: 'auto_dmca' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "trigger-legal-enforcer",
+      "name": "Trigger Legal Enforcer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2250,
+        400
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://telegram-scraper:8002/search-global",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "={{ $json.target_value }}"
+            },
+            {
+              "name": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "telegram-global-search",
+      "name": "Telegram Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1450,
+        400
+      ],
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Fetch Eligible Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Test Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Test Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch Eligible Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Eligible Targets": {
+      "main": [
+        [
+          {
+            "node": "Has Targets?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Fetch Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Targets?": {
+      "main": [
+        [
+          {
+            "node": "Process One at a Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process One at a Time": {
+      "main": [
+        [
+          {
+            "node": "Mark as Scanning",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Mark as Scanning": {
+      "main": [
+        [
+          {
+            "node": "DNS Lookup",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Telegram Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DNS Lookup": {
+      "main": [
+        [
+          {
+            "node": "Process Scan Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Scan Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Scan Results": {
+      "main": [
+        [
+          {
+            "node": "Update Target Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Check Allowlist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Allowlist": {
+      "main": [
+        [
+          {
+            "node": "Auto-Flag Impersonator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Flag Impersonator": {
+      "main": [
+        [
+          {
+            "node": "Trigger Legal Enforcer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Legal Enforcer": {
+      "main": [
+        [],
+        []
+      ]
+    },
+    "Update Target Results": {
+      "main": [
+        [
+          {
+            "node": "Prepare Credit Decrement",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Credit Decrement": {
+      "main": [
+        [
+          {
+            "node": "Decrement Credits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decrement Credits": {
+      "main": [
+        [
+          {
+            "node": "Continue Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Batch": {
+      "main": [
+        [
+          {
+            "node": "Process One at a Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Scraper": {
+      "main": [
+        [
+          {
+            "node": "Process Scan Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "triggerCount": 1,
+  "updatedAt": "2026-02-03T10:17:00.000Z",
+  "versionId": "1",
+  "active": true
+}

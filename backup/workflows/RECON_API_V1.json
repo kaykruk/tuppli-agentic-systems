@@ -1,0 +1,119 @@
+{
+    "name": "RECON_API_V1",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "real-time-recon",
+                "options": {}
+            },
+            "name": "Free Scan Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "command": "=node scripts/twitter_scraper.js {{$node[\"Free Scan Trigger\"].json[\"handle\"]}}"
+            },
+            "name": "Twitter Recon Agent",
+            "type": "n8n-nodes-base.executeCommand",
+            "typeVersion": 1,
+            "position": [
+                350,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "command": "=node scripts/friction_scraper.js {{$node[\"Free Scan Trigger\"].json[\"handle\"]}}"
+            },
+            "name": "Reddit Recon Agent",
+            "type": "n8n-nodes-base.executeCommand",
+            "typeVersion": 1,
+            "position": [
+                350,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "name": "Aggregate Results",
+            "type": "n8n-nodes-base.merge",
+            "typeVersion": 1,
+            "position": [
+                600,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "={\n  \"success\": true,\n  \"handle\": \"{{$node[\\\"Free Scan Trigger\\\"].json[\\\"handle\\\"]}}\",\n  \"threats_found\": {{(parseInt($node[\\\"Twitter Recon Agent\\\"].json[\\\"stdout\\\"]?.match(/Sent (\\\\d+) leads/)?.[1] || 0) + parseInt($node[\\\"Reddit Recon Agent\\\"].json[\\\"stdout\\\"]?.match(/Found (\\\\d+) specific/)?.[1] || 0))}},\n  \"breakdown\": [\n     { \"source\": \"X (Twitter)\", \"count\": \"{{$node[\\\"Twitter Recon Agent\\\"]?.json?.stdout?.match(/Sent (\\\\d+) leads/)?.[1] || 0}}\", \"severity\": \"high\" },\n     { \"source\": \"Reddit Support Channels\", \"count\": \"{{$node[\\\"Reddit Recon Agent\\\"]?.json?.stdout?.match(/Found (\\\\d+) specific/)?.[1] || 0}}\", \"severity\": \"medium\" }\n  ],\n  \"details\": \"Reconnaissance complete. High confidence in detected signals.\"\n}"
+            },
+            "name": "Respond to Frontend",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                850,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Free Scan Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Twitter Recon Agent",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Reddit Recon Agent",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Twitter Recon Agent": {
+            "main": [
+                [
+                    {
+                        "node": "Aggregate Results",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Reddit Recon Agent": {
+            "main": [
+                [
+                    {
+                        "node": "Aggregate Results",
+                        "type": "main",
+                        "index": 1
+                    }
+                ]
+            ]
+        },
+        "Aggregate Results": {
+            "main": [
+                [
+                    {
+                        "node": "Respond to Frontend",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

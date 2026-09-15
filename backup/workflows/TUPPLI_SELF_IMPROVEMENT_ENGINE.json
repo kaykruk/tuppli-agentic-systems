@@ -1,0 +1,276 @@
+{
+  "name": "TUPPLI_SELF_IMPROVEMENT_ENGINE",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Weekly Strategy Brief",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hnrss.org/newest?q=cybersecurity"
+      },
+      "id": "2",
+      "name": "Hacker News: Sec",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hnrss.org/newest?q=AI%20startups"
+      },
+      "id": "3",
+      "name": "Hacker News: AI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "keep",
+        "keep": 5
+      },
+      "id": "4",
+      "name": "Top 5 AI Hacks",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 2.1,
+      "position": [
+        600,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "keep",
+        "keep": 5
+      },
+      "id": "5",
+      "name": "Top 5 Sec Hacks",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 2.1,
+      "position": [
+        600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "multiplex",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Merge AI and Sec Streams",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "aggregate",
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "combined_feeds",
+        "options": {}
+      },
+      "id": "7",
+      "name": "Group Feed Array",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $credentials.geminiApi.apiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "contents",
+              "value": "={{ [{\"role\": \"user\", \"parts\": [{\"text\": \"Based on the latest Hacker News stories related to cybersecurity and AI:\\n\" + JSON.stringify($json.combined_feeds) + \"\\n\\nYou are the Chief Strategy & Intelligence Officer at Tuppli, a scaling startup that forensically protects OnlyFans/Patreon creators from piracy using perceptual hashing, AI screening, and automated DMCA take-downs. Synthesize the above raw data to find ONE highly innovative, scalable, or newly-discovered safe way to improve Tuppli's architecture, automation, or security posture. Crucially, explicitly connect this technical improvement to how it will generate massive value for creators, keep them relevant, and place Tuppli miles ahead of the competition. Format exactly as a brief Markdown announcement to the founding team.\"}]}] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8",
+      "name": "Gemini System Architect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1200,
+        300
+      ],
+      "credentials": {
+        "geminiApi": {
+          "id": "gemini-api-standard",
+          "name": "Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=🧠 *Tuppli Self-Improvement Briefing* 🧠\n{{ JSON.parse($json.response).candidates[0].content.parts[0].text }}"
+            }
+          ]
+        }
+      },
+      "id": "9",
+      "name": "Notify Founder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1400,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Strategy Brief": {
+      "main": [
+        [
+          {
+            "node": "Hacker News: Sec",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Hacker News: AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hacker News: Sec": {
+      "main": [
+        [
+          {
+            "node": "Top 5 Sec Hacks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hacker News: AI": {
+      "main": [
+        [
+          {
+            "node": "Top 5 AI Hacks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top 5 Sec Hacks": {
+      "main": [
+        [
+          {
+            "node": "Merge AI and Sec Streams",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Top 5 AI Hacks": {
+      "main": [
+        [
+          {
+            "node": "Merge AI and Sec Streams",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge AI and Sec Streams": {
+      "main": [
+        [
+          {
+            "node": "Group Feed Array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Group Feed Array": {
+      "main": [
+        [
+          {
+            "node": "Gemini System Architect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini System Architect": {
+      "main": [
+        [
+          {
+            "node": "Notify Founder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "id": "TUPPLI_SELF_IMPROVEMENT_ENGINE-prod-001"
+}

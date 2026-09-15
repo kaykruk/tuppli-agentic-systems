@@ -1,0 +1,85 @@
+# =============================================================================
+# SECURITY: Prevent accidental exposure of sensitive files
+# =============================================================================
+
+# Private business docs (never push)
+COST_BREAKDOWN.md
+
+# Environment files (NEVER commit these)
+.env
+.env.*
+*.env
+!.env.example
+
+# n8n data (contains credentials)
+n8n_data/
+.n8n/
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.p12
+certs/
+
+# Secrets and credentials
+*secret*
+*credential*
+*.secrets
+service_account*.json
+.venv*
+__pycache__/
+*.pyc
+
+# Backups (may contain sensitive data)
+*.bak
+*.backup
+*.sql.gz
+backups/
+
+# =============================================================================
+# Development
+# =============================================================================
+
+# Docker
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node modules (if frontend added later)
+node_modules/
+.npm/
+
+# Build artifacts
+dist/
+build/
+.next/
+
+# Test coverage
+coverage/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Root-level artifacts (not project dependencies)
+/package.json
+/package-lock.json
+patch_*.py
+force_*.js
+supabase/.temp/
+.vercel

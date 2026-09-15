@@ -1,0 +1,210 @@
+{
+    "name": "SOCIAL_MEDIA_AUTOPILOT",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "days"
+                        }
+                    ]
+                }
+            },
+            "id": "e931fa78-d06d-49d7-83ed-65f6f264858b",
+            "name": "Daily Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1.1,
+            "position": [
+                200,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "values": {
+                    "string": [
+                        {
+                            "name": "topic_list",
+                            "value": "1. The mathematical cost of leaked Pay-Per-View videos.\n2. Why watermarks are useless against modern scraping bots.\n3. The rise of impersonator/catfish profiles on dating apps stealing fans' money.\n4. How automated DMCA takedowns directly to hosting providers beat manual Google SEO delisting teams."
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "2bc8f152-7e04-4c59-bf7a-62fcfec81467",
+            "name": "Define Topics",
+            "type": "n8n-nodes-base.set",
+            "typeVersion": 2,
+            "position": [
+                420,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "promptType": "define",
+                "text": "={{ $json.topic_list }}",
+                "messages": {
+                    "messageValues": [
+                        {
+                            "message": "You are the Chief Marketing Officer for Tuppli, an elite, AI-driven anti-piracy SaaS designed for the Top 1% of the Creator Economy (OnlyFans, Patreon, independent creators).\n\nYour Goal: Write a hard-hitting, highly engaging Twitter/X thread (3-5 tweets) that converts high-earning creators from unaware to problem-aware, and finally to solution-aware (Tuppli).\n\nThe Vibe: Aggressive, analytical, empathetic to the creator's financial pain, and technically authoritative. You are building an \"Iron Dome\" around their IP.\n\nFramework: You must use the AIDA framework.\n- Tweet 1 (Attention): A bold, controversial hook.\n- Tweet 2 (Interest): Explain the unseen mechanics of the problem.\n- Tweet 3 (Desire): Explain why the status quo tools fail.\n- Tweet 4 (Desire/Solution): Introduce Tuppli's capability (headless browsers, AI, real-time takedowns).\n- Tweet 5 (Action): A strong call to action to join the waitlist.\n\nRules:\n1. Keep each tweet under 280 characters.\n2. Output ONLY the raw text for the thread. Use '🧵👇' for the hook, and number them. Separate tweets with '-----'.\n3. Pick ONE of the following topics randomly to focus on today:\n{{ $json.topic_list }}"
+                        }
+                    ]
+                }
+            },
+            "id": "18dca4dc-1707-44f2-9844-3ec9eaf19ca7",
+            "name": "LLM: Generate AIDA Thread",
+            "type": "@n8n/n8n-nodes-langchain.chainLlm",
+            "typeVersion": 1.3,
+            "position": [
+                640,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "gemini-1.5-flash",
+                "options": {
+                    "temperature": 0.7
+                }
+            },
+            "id": "8432b8aa-bc01-4475-802c-490ba560bbfd",
+            "name": "Google Gemini",
+            "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+            "typeVersion": 1,
+            "position": [
+                640,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const threadBlocks = $input.item.json.response.text.split('-----');\n\nconst formattedTweets = threadBlocks.map(block => block.trim()).filter(block => block.length > 0);\n\nreturn { tweets: formattedTweets };"
+            },
+            "id": "8a729e2f-fbe0-410a-afe1-6efd3cf0f3d6",
+            "name": "Split Thread into Array",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [
+                860,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "text": "={{ $json.tweets[0] }}"
+            },
+            "id": "50d8327c-3b97-4d1a-9694-df9b47e5b22b",
+            "name": "X: Post Thread",
+            "type": "n8n-nodes-base.twitter",
+            "typeVersion": 2,
+            "position": [
+                1080,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "GET",
+                "url": "=https://tuppli.com/api/og/marketing?title={{ encodeURIComponent($json.tweets[0].split('\\n')[0]) }}&highlight={{ encodeURIComponent('Content Protected') }}&tag={{ encodeURIComponent('Autonomous Defense') }}",
+                "responseFormat": "file",
+                "options": {}
+            },
+            "id": "e43d9b89-a342-4b6c-8f12-c516f4af8d1e",
+            "name": "Generate Marketing Image",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                1300,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "text": "={{ $json.tweets[0] }}",
+                "attachments": "data"
+            },
+            "id": "50d8327c-3b97-4d1a-9694-df9b47e5b22b",
+            "name": "X: Post Thread",
+            "type": "n8n-nodes-base.twitter",
+            "typeVersion": 2,
+            "position": [
+                1520,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Daily Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Define Topics",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Define Topics": {
+            "main": [
+                [
+                    {
+                        "node": "LLM: Generate AIDA Thread",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Google Gemini": {
+            "ai_languageModel": [
+                [
+                    {
+                        "node": "LLM: Generate AIDA Thread",
+                        "type": "ai_languageModel",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "LLM: Generate AIDA Thread": {
+            "main": [
+                [
+                    {
+                        "node": "Split Thread into Array",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Split Thread into Array": {
+            "main": [
+                [
+                    {
+                        "node": "Generate Marketing Image",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Generate Marketing Image": {
+            "main": [
+                [
+                    {
+                        "node": "X: Post Thread",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "active": false
+}

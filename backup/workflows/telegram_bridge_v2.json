@@ -1,0 +1,391 @@
+{
+  "name": "Tuppli Telegram Approval Bridge",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram-approval-personal",
+        "options": {}
+      },
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "id": "3e1968fc-0b53-4a59-8e58-831dcdc4c354",
+      "webhookId": "c09af9af-7d5c-462c-a5ca-e7776d5797f7"
+    },
+    {
+      "parameters": {
+        "chatId": "1200502709",
+        "text": "=🚀 *New {{$node[\"Webhook Trigger\"].json[\"body\"][\"platform\"]}} Draft for Tuppli*\n\n{{$node[\"Webhook Trigger\"].json[\"body\"][\"content\"]}}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "✅ Approve & Post",
+                    "additionalFields": {
+                      "callback_data": "=approve:{{ $node[\"Webhook Trigger\"].json[\"body\"][\"id\"] }}"
+                    }
+                  },
+                  {
+                    "text": "✍️ Edit Draft",
+                    "additionalFields": {
+                      "callback_data": "=edit:{{ $node[\"Webhook Trigger\"].json[\"body\"][\"id\"] }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "name": "Telegram Send Message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ],
+      "id": "916c6b33-3476-4471-b863-b53191b7a541",
+      "credentials": {
+        "telegramApi": {
+          "id": "HzsPUsahGMbv6vQM",
+          "name": "Tuppli Approval Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telegram-callback-handler",
+        "options": {}
+      },
+      "id": "8f553455-faf3-43ac-93e0-75a0d97696b7",
+      "name": "Callback Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        600
+      ],
+      "webhookId": "callback-webhook-personal"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body;\nif (!body) return { error: 'No body' };\n\nlet action, id, message_id, callback_query_id;\n\nif (body.callback_query) {\n  const callbackData = body.callback_query.data.replace(/^=/, '');\n  [action, id] = callbackData.split(':');\n  message_id = body.callback_query.message.message_id;\n  callback_query_id = body.callback_query.id;\n} else if (body.message && body.message.text) {\n  const text = body.message.text;\n  const match = text.match(/\\/(approve|edit)\\s*(\\d+)?/);\n  if (match) {\n    action = match[1];\n    id = match[2];\n    message_id = body.message.message_id;\n  }\n}\n\nreturn { \n  action, \n  id, \n  message_id, \n  callback_query_id,\n  is_command: !!body.message\n};"
+      },
+      "name": "Parse Incoming",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        600
+      ],
+      "id": "c62f8a12-6b94-4d1a-9f5b-123456789abc"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ !!$json.callback_query_id }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Is Callback Query?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        450
+      ],
+      "id": "check-callback-q"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot[REDACTED_TELEGRAM_TOKEN]/answerCallbackQuery",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "callback_query_id",
+              "value": "={{ $json.callback_query_id }}"
+            },
+            {
+              "name": "text",
+              "value": "=Processing {{$json.action}}..."
+            }
+          ]
+        },
+        "options": {
+          "ignoreResponseCode": true
+        }
+      },
+      "name": "Acknowledge Callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        700,
+        450
+      ],
+      "id": "ack-callback-query"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.action }}",
+              "value2": "approve"
+            }
+          ]
+        }
+      },
+      "name": "Action Is Approve?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        650
+      ],
+      "id": "d73f9b23-7c05-4e2b-8a6c-987654321def"
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "schema": "n8n",
+        "operation": "get",
+        "tableId": "content_history",
+        "id": "={{ $node[\"Parse Incoming\"].json[\"id\"] }}"
+      },
+      "name": "Supabase Get Content",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        900,
+        600
+      ],
+      "id": "e84a0c34-8d16-4f3c-9b7d-246801357902",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "text": "={{ $json.content.split('\\n\\n')[0] }}",
+        "additionalFields": {}
+      },
+      "name": "X: Post Approved",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        600
+      ],
+      "id": "f95b1d45-9e27-4f4d-a88e-357913579135",
+      "credentials": {
+        "twitterOAuth2Api": {
+          "id": "Ln5I3tcRvfULsOH5",
+          "name": "X account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "schema": "n8n",
+        "tableId": "content_history",
+        "id": "={{ $node[\"Parse Incoming\"].json[\"id\"] }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "status",
+              "fieldValue": "posted"
+            }
+          ]
+        }
+      },
+      "name": "Supabase Update Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1300,
+        600
+      ],
+      "id": "a06c2e56-0f38-4g4e-b99f-468024680246",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "1200502709",
+        "operation": "sendMessage",
+        "text": "=✅ *Posted* (Draft #{{$node[\"Parse Incoming\"].json[\"id\"]}})",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "name": "Telegram Success Notify",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        600
+      ],
+      "id": "success-notif",
+      "credentials": {
+        "telegramApi": {
+          "id": "HzsPUsahGMbv6vQM",
+          "name": "Tuppli Approval Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "1200502709",
+        "text": "=✍️ *Draft #{{$node[\"Parse Incoming\"].json[\"id\"]}} is ready for editing.*\n\nPlease type the new version of your post below.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "name": "Telegram Edit Prompt",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        900,
+        800
+      ],
+      "id": "edit-prompt",
+      "credentials": {
+        "telegramApi": {
+          "id": "HzsPUsahGMbv6vQM",
+          "name": "Tuppli Approval Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Incoming",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Incoming": {
+      "main": [
+        [
+          {
+            "node": "check-callback-q",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Action Is Approve?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "check-callback-q": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action Is Approve?": {
+      "main": [
+        [
+          {
+            "node": "Supabase Get Content",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Edit Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Get Content": {
+      "main": [
+        [
+          {
+            "node": "X: Post Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X: Post Approved": {
+      "main": [
+        [
+          {
+            "node": "Supabase Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Update Status": {
+      "main": [
+        [
+          {
+            "node": "Telegram Success Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,274 @@
+{
+  "name": "Twitter Lead Recon",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "twitter-recon-webhook",
+        "options": {}
+      },
+      "id": "webhook-trigger-node",
+      "name": "Twitter Scraper Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "twitter-recon-scrape"
+    },
+    {
+      "parameters": {
+        "jsCode": "const startDate = new Date('2025-09-01');\nconst endDate = new Date('2026-03-01T23:59:59');\n\nlet filteredItems = [];\n\nfor (const item of $input.all()) {\n  const tweetDate = new Date(item.json.createdAt);\n  if (tweetDate >= startDate && tweetDate <= endDate) {\n    filteredItems.push(item);\n  }\n}\n\nreturn filteredItems;"
+      },
+      "id": "14-day-filter-node",
+      "name": "14 Day Lookback Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        550,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "={{ $credentials.geminiApi.apiKey }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "contents",
+              "value": "={{ [{\"role\": \"user\", \"parts\": [{\"text\": \"Evaluate this tweet: '\" + $json.fullText + \"'\\n\\nIs this a creator complaining about their *own* premium content being leaked? Respond ONLY with a JSON object: {\\\"is_creator_victim\\\": true/false, \\\"reason\\\": \\\"brief explanation\\\", \\\"creator_niche\\\": \\\"e.g. cosplay, fitness, NSFW\\\"}. Filter out fans looking for leaks, bots, or people talking about movie/game leaks.\"}]}] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c4a3b2c1-3333-4f77-aaaa-cdef01234567",
+      "name": "AI Lead Qualifier",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        750,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "Uses Gemini to qualify the lead",
+      "credentials": {
+        "geminiApi": {
+          "id": "gemini-api-standard",
+          "name": "Gemini"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ JSON.parse($json.response).is_creator_victim }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "b3z2a1b0-4444-4g88-bbbb-def012345678",
+      "name": "If Qualified Lead",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/sales_leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "platform",
+              "value": "twitter"
+            },
+            {
+              "name": "username",
+              "value": "={{ $json.body.author.userName }}"
+            },
+            {
+              "name": "tweet_url",
+              "value": "=https://twitter.com/{{ $json.body.author.userName }}/status/{{ $json.body.id }}"
+            },
+            {
+              "name": "tweet_text",
+              "value": "={{ $json.body.text }}"
+            },
+            {
+              "name": "ai_analysis",
+              "value": "={{ $json.response }}"
+            },
+            {
+              "name": "status",
+              "value": "new_lead"
+            }
+          ]
+        }
+      },
+      "id": "a2y1x0w9-5555-4h99-cccc-ef0123456789",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "text": "={{ JSON.parse($json.response).is_creator_victim ? 'Man that’s brutal. We deal with this exact issue all the time—I just sent you a DM with exactly how to get those links taken down today. Check your message requests.' : '' }}",
+        "additionalFields": {
+          "in_reply_to_status_id": "={{ $json.body.id }}"
+        }
+      },
+      "id": "q1w2e3r4-t5y6-u7i8-o9p0-a1s2d3f4g5h6",
+      "name": "Reply to Tweet",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        200
+      ],
+      "credentials": {
+        "twitterOAuth2Api": {
+          "id": "twitter_api_credentials",
+          "name": "Twitter API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "=🚨 *Lead Auto-Replied*\n*User:* @{{ $json.body.author.userName }}\n*Original Tweet:* \"{{ $json.body.text }}\"\n*Context:* {{ JSON.parse($$('AI Lead Qualifier').item.json.response).creator_niche }}\n*Action Required:* Send manual Value-First DM.\n*Script:* `Hey {{ $json.body.author.name }}, saw your tweet about the leak. We handle IP protection for creators and have dealt with that site before. I can run a quick, free deep-scan of your handles right now to see where else your stuff is currently hosted, and send you the report. Want me to run it?`\n*Link:* https://twitter.com/{{ $json.body.author.userName }}/status/{{ $json.body.id }}"
+            }
+          ]
+        }
+      },
+      "id": "z1x0w9v8-6666-4iaa-dddd-f0123456789a",
+      "name": "Alert Sales Team",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1450,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Twitter Scraper Webhook": {
+      "main": [
+        [
+          {
+            "node": "14 Day Lookback Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Lead Qualifier": {
+      "main": [
+        [
+          {
+            "node": "If Qualified Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Qualified Lead": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Alert Sales Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "14 Day Lookback Filter": {
+      "main": [
+        [
+          {
+            "node": "AI Lead Qualifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveManualRuns": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "id": "TWITTER_LEAD_RECON-prod-001"
+}

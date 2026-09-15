@@ -1,0 +1,83 @@
+{
+    "name": "FORENSIC_DEBUG_NET",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "forensic-debug-net",
+                "responseMode": "responseNode",
+                "options": {}
+            },
+            "id": "debug-net-webhook",
+            "name": "Debug Net Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                250,
+                300
+            ],
+            "webhookId": "forensic-debug-net-webhook"
+        },
+        {
+            "parameters": {
+                "url": "http://placekitten.com/200/300",
+                "options": {}
+            },
+            "id": "debug-net-request",
+            "name": "Debug HTTP Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.1,
+            "position": [
+                450,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "json",
+                "responseBody": "{\n  \"status\": \"net_ok\",\n  \"data_size\": {{ $input.first().binary ? $input.first().binary.data.length : 'no_binary' }},\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+                "options": {}
+            },
+            "id": "debug-net-response",
+            "name": "Debug Net Response",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                650,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Debug Net Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Debug HTTP Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Debug HTTP Request": {
+            "main": [
+                [
+                    {
+                        "node": "Debug Net Response",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "staticData": null,
+    "active": false, "tags": [],
+    "triggerCount": 1,
+    "versionId": "1",
+    "active": true
+}

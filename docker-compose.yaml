@@ -1,0 +1,310 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: tuppli-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: tuppli-n8n
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      # n8n Configuration
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_LISTEN_ADDRESS=0.0.0.0
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      # Queue Mode Configuration
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      # Webhook Authentication
+      - N8N_WEBHOOK_AUTH_HEADER=${N8N_WEBHOOK_AUTH_HEADER:-X-Tuppli-Auth}
+      - N8N_WEBHOOK_AUTH_TOKEN=${N8N_WEBHOOK_AUTH_TOKEN}
+      # Supabase Configuration
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - DB_TYPE=sqlite
+      # Security Settings
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_METRICS=true
+      - N8N_USER_MANAGEMENT_DISABLED=false
+      - N8N_DISABLE_UI_ACTION_TRACKING=true
+      - N8N_AUTH_MULTI_TENANT_IS_ENABLED=false
+      - N8N_AUTH_SSO_SAML_IS_ENABLED=false
+      # Integrations
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      # network fix
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - lysis-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  n8n-worker:
+    image: n8nio/n8n:latest
+    container_name: tuppli-n8n-worker
+    restart: unless-stopped
+    command: worker
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-UTC}
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      - DB_TYPE=sqlite
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_METRICS=true
+      - NODE_OPTIONS=--dns-result-order=ipv4first
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - lysis-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    depends_on:
+      - n8n
+      - redis
+
+  image-hasher:
+    build:
+      context: ./image_hasher
+      dockerfile: Dockerfile
+    container_name: tuppli-image-hasher
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dark-web-scanner:
+    build:
+      context: ./dark_web_scanner
+      dockerfile: Dockerfile
+    container_name: tuppli-dark-web-scanner
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8001"
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+
+  telegram-scraper:
+    build:
+      context: ./telegram_scraper
+      dockerfile: Dockerfile
+    container_name: tuppli-telegram-scraper
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8002:8002"
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_SESSION=${TELEGRAM_SESSION}
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8002/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  legal-automation:
+    build:
+      context: ./legal_automation
+      dockerfile: Dockerfile
+    container_name: tuppli-legal-automation
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tuppli-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - lysis-network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: tuppli-loki
+    restart: unless-stopped
+    user: "0"
+    command: -config.file=/etc/loki/loki-config.yaml
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - ./monitoring/loki:/etc/loki
+      - loki_data:/loki
+    networks:
+      - lysis-network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: tuppli-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    volumes:
+      - /var/log:/var/log
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./monitoring/promtail:/etc/promtail
+    networks:
+      - lysis-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tuppli-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    networks:
+      - lysis-network
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: tuppli-blackbox
+    restart: unless-stopped
+    command: --config.file=/etc/blackbox_exporter/config.yml
+    volumes:
+      - ./monitoring/blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml
+    networks:
+      - lysis-network
+
+  social-enforcer:
+    build:
+      context: ./social_enforcer
+      dockerfile: Dockerfile
+    container_name: tuppli-social-enforcer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4003:4003"
+    environment:
+      - SOCIAL_ENFORCER_PORT=4003
+      - GOOGLE_SEARCH_CONSOLE_API_KEY=${GOOGLE_SEARCH_CONSOLE_API_KEY:-}
+      - BING_WEBMASTER_API_KEY=${BING_WEBMASTER_API_KEY:-}
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4003/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  watermark-service:
+    build:
+      context: ./watermark_service
+      dockerfile: Dockerfile
+    container_name: tuppli-watermark-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4001:4001"
+    environment:
+      - WATERMARK_SERVICE_PORT=4001
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4001/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ai-detection:
+    build:
+      context: ./ai_detection
+      dockerfile: Dockerfile
+    container_name: tuppli-ai-detection
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4002:4002"
+    environment:
+      - AI_DETECTION_PORT=4002
+    networks:
+      - lysis-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4002/health", "||", "exit", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  n8n_data:
+    driver: local
+  redis_data:
+    driver: local
+  loki_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  lysis-network:
+    driver: bridge

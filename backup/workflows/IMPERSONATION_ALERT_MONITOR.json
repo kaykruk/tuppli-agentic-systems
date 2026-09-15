@@ -1,0 +1,116 @@
+{
+    "name": "IMPERSONATION_ALERT_MONITOR",
+    "nodes": [
+        {
+            "parameters": {
+                "rule": {
+                    "interval": [
+                        {
+                            "field": "minutes",
+                            "minutesInterval": 15
+                        }
+                    ]
+                }
+            },
+            "id": "e931fa78-d06d-49d7-83ed-65f6f264858b",
+            "name": "15 Minute Trigger",
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "typeVersion": 1.1,
+            "position": [
+                200,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "search",
+                "searchText": "(\"impersonator\" OR \"fake account\" OR \"stolen content\" OR \"catfish\") filter:verified",
+                "limit": 10
+            },
+            "id": "50d8327c-3b97-4d1a-9694-df9b47e5b22b",
+            "name": "X: Search Mentions",
+            "type": "n8n-nodes-base.twitter",
+            "typeVersion": 2,
+            "position": [
+                420,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "conditions": {
+                    "boolean": [
+                        {
+                            "value1": "={{ $json.id ? true : false }}",
+                            "value2": true
+                        }
+                    ]
+                }
+            },
+            "id": "2da216dc-9ec6-4f36-8bd6-eb1dd5e2de5c",
+            "name": "Found Tweets?",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 1,
+            "position": [
+                640,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "fromEmail": "tuppli-system@tuppli.com",
+                "toEmail": "admin@tuppli.com",
+                "subject": "=🚨 Impersonation Alert: User {{$json.user.screen_name}} is being impersonated",
+                "text": "=Creator: {{$json.user.name}} (@{{$json.user.screen_name}})\nFollowers: {{$json.user.followers_count}}\n\nTweet: {{$json.text}}\n\nLink: https://twitter.com/{{$json.user.screen_name}}/status/{{$json.id}}\n\n---\nRecommended Action: Manually send DM Template B from the Outreach Playbook right now.",
+                "options": {}
+            },
+            "id": "270b7410-b99b-4f76-9285-3bc673fb11cb",
+            "name": "Send Alert Email",
+            "type": "n8n-nodes-base.emailSend",
+            "typeVersion": 2,
+            "position": [
+                860,
+                280
+            ]
+        }
+    ],
+    "connections": {
+        "15 Minute Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "X: Search Mentions",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "X: Search Mentions": {
+            "main": [
+                [
+                    {
+                        "node": "Found Tweets?",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Found Tweets?": {
+            "main": [
+                [
+                    {
+                        "node": "Send Alert Email",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    },
+    "settings": {
+        "executionOrder": "v1"
+    },
+    "active": false
+}

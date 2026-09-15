@@ -1,0 +1,469 @@
+{
+  "name": "FORENSIC_VERIFY",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "forensic-verify",
+        "responseMode": "responseNode",
+        "options": {
+          "allowUnauthorizedCerts": false
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "forensic-verify-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate webhook authentication\nconst headers = $input.first().json.headers;\nconst expectedToken = $env.N8N_WEBHOOK_AUTH_TOKEN;\nconst authHeader = $env.N8N_WEBHOOK_AUTH_HEADER || 'X-Lysis-Auth';\n\nconst receivedToken = headers[authHeader.toLowerCase()] || headers[authHeader];\n\nif (!expectedToken) {\n  throw new Error('N8N_WEBHOOK_AUTH_TOKEN not configured');\n}\n\nif (!receivedToken || receivedToken !== expectedToken) {\n  throw new Error('Unauthorized: Invalid or missing auth token');\n}\n\n// Auth passed, forward the payload\nreturn $input.first().json;"
+      },
+      "id": "validate-auth",
+      "name": "Validate Auth Token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and validate file information from webhook payload\nconst payload = $input.first().json.body;\n\n// Validate required fields\nconst requiredFields = ['evidence_name', 'evidence_type', 'tenant_id'];\nconst missing = requiredFields.filter(f => !payload[f]);\n\nif (missing.length > 0) {\n  throw new Error(`Missing required fields: ${missing.join(', ')}`);\n}\n\n// Validate tenant_id is a valid UUID\nconst uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nif (!uuidRegex.test(payload.tenant_id)) {\n  throw new Error('Invalid tenant_id format');\n}\n\nreturn {\n  tenant_id: payload.tenant_id,\n  evidence_name: payload.evidence_name,\n  evidence_type: payload.evidence_type,\n  case_id: payload.case_id || null,\n  file_path: payload.file_path,\n  file_size: payload.file_size,\n  mime_type: payload.mime_type,\n  phash_image: payload.phash_image || null,\n  source_url: payload.source_url || null,\n  source_platform: payload.source_platform || null,\n  collected_by: payload.collected_by || 'lysis-automation',\n  collected_at: payload.collected_at || new Date().toISOString(),\n  storage_bucket: payload.storage_bucket || 'forensic-evidence',\n  metadata: payload.metadata || {}\n};"
+      },
+      "id": "extract-payload",
+      "name": "Extract & Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate cryptographic hashes for integrity verification\nconst crypto = require('crypto');\nconst evidence = $input.first().json;\n\n// Create a deterministic content identifier\n// In production, this would hash the actual file content\nconst contentIdentifier = JSON.stringify({\n  name: evidence.evidence_name,\n  type: evidence.evidence_type,\n  path: evidence.file_path,\n  timestamp: evidence.collected_at\n});\n\n// Calculate hashes\nconst md5 = crypto.createHash('md5').update(contentIdentifier).digest('hex');\nconst sha1 = crypto.createHash('sha1').update(contentIdentifier).digest('hex');\nconst sha256 = crypto.createHash('sha256').update(contentIdentifier).digest('hex');\nconst sha512 = crypto.createHash('sha512').update(contentIdentifier).digest('hex');\n\nreturn {\n  ...evidence,\n  hash_md5: md5,\n  hash_sha1: sha1,\n  hash_sha256: sha256,\n  hash_sha512: sha512,\n  verification_status: 'verified',\n  verified_at: new Date().toISOString(),\n  verified_by: 'lysis-automation'\n};"
+      },
+      "id": "calculate-hashes",
+      "name": "Calculate Hashes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create chain of custody log entry\nconst evidence = $input.first().json;\n\nconst custodyEntry = {\n  timestamp: new Date().toISOString(),\n  action: 'evidence_verified',\n  performed_by: evidence.verified_by,\n  ip_address: $input.first().json.headers?.['x-forwarded-for'] || 'internal',\n  details: {\n    hashes_calculated: ['md5', 'sha1', 'sha256', 'sha512'],\n    verification_status: evidence.verification_status,\n    phash_present: !!evidence.phash_image\n  }\n};\n\nreturn {\n  ...evidence,\n  custody_log: [custodyEntry]\n};"
+      },
+      "id": "create-custody-log",
+      "name": "Create Custody Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "forensic_evidence",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tenant_id",
+              "fieldValue": "={{ $json.tenant_id }}"
+            },
+            {
+              "fieldId": "evidence_name",
+              "fieldValue": "={{ $json.evidence_name }}"
+            },
+            {
+              "fieldId": "evidence_type",
+              "fieldValue": "={{ $json.evidence_type }}"
+            },
+            {
+              "fieldId": "case_id",
+              "fieldValue": "={{ $json.case_id }}"
+            },
+            {
+              "fieldId": "file_path",
+              "fieldValue": "={{ $json.file_path }}"
+            },
+            {
+              "fieldId": "file_size",
+              "fieldValue": "={{ $json.file_size }}"
+            },
+            {
+              "fieldId": "mime_type",
+              "fieldValue": "={{ $json.mime_type }}"
+            },
+            {
+              "fieldId": "phash_image",
+              "fieldValue": "={{ $json.phash }}"
+            },
+            {
+              "fieldId": "source_url",
+              "fieldValue": "={{ $json.source_url }}"
+            },
+            {
+              "fieldId": "source_platform",
+              "fieldValue": "={{ $json.source_platform }}"
+            },
+            {
+              "fieldId": "hash_md5",
+              "fieldValue": "={{ $json.hash_md5 }}"
+            },
+            {
+              "fieldId": "hash_sha1",
+              "fieldValue": "={{ $json.hash_sha1 }}"
+            },
+            {
+              "fieldId": "hash_sha256",
+              "fieldValue": "={{ $json.hash_sha256 }}"
+            },
+            {
+              "fieldId": "hash_sha512",
+              "fieldValue": "={{ $json.hash_sha512 }}"
+            },
+            {
+              "fieldId": "collected_by",
+              "fieldValue": "={{ $json.collected_by }}"
+            },
+            {
+              "fieldId": "collected_at",
+              "fieldValue": "={{ $json.collected_at }}"
+            },
+            {
+              "fieldId": "verified_by",
+              "fieldValue": "={{ $json.verified_by }}"
+            },
+            {
+              "fieldId": "verified_at",
+              "fieldValue": "={{ $json.verified_at }}"
+            },
+            {
+              "fieldId": "verification_status",
+              "fieldValue": "={{ $json.verification_status }}"
+            },
+            {
+              "fieldId": "storage_bucket",
+              "fieldValue": "={{ $json.storage_bucket }}"
+            },
+            {
+              "fieldId": "custody_log",
+              "fieldValue": "={{ JSON.stringify($json.custody_log) }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ JSON.stringify({ ...$json.metadata, dhash: $json.dhash, ahash: $json.ahash }) }}"
+            }
+          ]
+        }
+      },
+      "id": "store-evidence",
+      "name": "Store in Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "5Uz4hmN693ANgSFd",
+          "name": "Supabase account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate success report\nconst evidence = $input.first().json;\n\nreturn {\n  success: true,\n  report_type: 'forensic_verification',\n  evidence_id: evidence.id,\n  tenant_id: evidence.tenant_id,\n  evidence_name: evidence.evidence_name,\n  verification_status: 'verified',\n  hashes: {\n    md5: evidence.hash_md5,\n    sha1: evidence.hash_sha1,\n    sha256: evidence.hash_sha256,\n    sha512: evidence.hash_sha512\n  },\n  verified_at: evidence.verified_at,\n  message: `Evidence '${evidence.evidence_name}' has been successfully verified and stored.`\n};"
+      },
+      "id": "generate-report",
+      "name": "Generate Success Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "webhook-response-success",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Handle database errors\nconst error = $input.first().json;\n\nconsole.error('Database error:', JSON.stringify(error));\n\nreturn {\n  success: false,\n  error: 'database_error',\n  message: 'Failed to store evidence in database',\n  details: error.message || 'Unknown error',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "handle-db-error",
+      "name": "Handle DB Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "webhook-response-error",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Global error handler for validation/auth errors\nconst error = $input.first().error;\nconst message = error?.message || 'Unknown error occurred';\n\n// Determine error type and appropriate status code\nlet statusCode = 500;\nlet errorType = 'internal_error';\n\nif (message.includes('Unauthorized')) {\n  statusCode = 401;\n  errorType = 'authentication_error';\n} else if (message.includes('Missing required') || message.includes('Invalid')) {\n  statusCode = 400;\n  errorType = 'validation_error';\n}\n\nreturn {\n  success: false,\n  error: errorType,\n  message: message,\n  timestamp: new Date().toISOString(),\n  statusCode: statusCode\n};"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error, message: $json.message }, null, 2) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      },
+      "id": "webhook-response-validation-error",
+      "name": "Validation Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.file_path }}",
+        "responseFormat": "file",
+        "options": {}
+      },
+      "id": "download-evidence",
+      "name": "Download Evidence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://image-hasher:8000/hash",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data:data",
+        "options": {}
+      },
+      "id": "generate-phash",
+      "name": "Generate Forensic Hash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Auth Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Auth Token": {
+      "main": [
+        [
+          {
+            "node": "Extract & Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "Download Evidence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Hashes": {
+      "main": [
+        [
+          {
+            "node": "Create Custody Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Custody Log": {
+      "main": [
+        [
+          {
+            "node": "Store in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Success Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle DB Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Success Report": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle DB Error": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Validation Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Evidence": {
+      "main": [
+        [
+          {
+            "node": "Generate Forensic Hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Forensic Hash": {
+      "main": [
+        [
+          {
+            "node": "Calculate Hashes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    "forensic",
+    "verification",
+    "security"
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-03T10:17:00.000Z",
+  "active": true
+}

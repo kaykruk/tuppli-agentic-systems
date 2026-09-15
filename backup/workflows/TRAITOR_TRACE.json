@@ -1,0 +1,298 @@
+{
+  "name": "TRAITOR_TRACE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "traitor-trace",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "traitor-trace-webhook"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT fe.id, fe.source_url, fe.evidence_name, fe.source_platform, fe.hash_sha256, fe.tenant_id, fe.custody_log, mv.storage_path AS original_path FROM forensic_evidence fe LEFT JOIN master_vault mv ON mv.tenant_id = fe.tenant_id WHERE fe.verification_status IN ('matched', 'verified') AND (fe.watermark_checked IS NULL OR fe.watermark_checked = false) LIMIT 10",
+        "options": {}
+      },
+      "id": "fetch-untraced",
+      "name": "Fetch Untraced Matches",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log custody entry: pipeline initiated\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  const existingLog = Array.isArray(d.custody_log) ? d.custody_log : [];\n  \n  existingLog.push({\n    timestamp: new Date().toISOString(),\n    action: 'traitor_trace_initiated',\n    performed_by: 'TRAITOR_TRACE_WORKFLOW',\n    details: {\n      evidence_id: d.id,\n      source_url: d.source_url,\n      source_platform: d.source_platform,\n      pipeline_version: '2.0'\n    }\n  });\n  \n  results.push({ ...d, custody_log: existingLog });\n}\n\nreturn results;"
+      },
+      "id": "log-initiation",
+      "name": "Log: Trace Initiated",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const d = item.json;\n  if (!d.source_url) {\n    d.custody_log.push({\n      timestamp: new Date().toISOString(),\n      action: 'download_skipped',\n      performed_by: 'TRAITOR_TRACE_WORKFLOW',\n      details: { reason: 'no_source_url' }\n    });\n    results.push({ ...d, status: 'skipped', watermark_found: false });\n    continue;\n  }\n\n  try {\n    // Download with timeout and retry\n    let imgBuffer = null;\n    let attempts = 0;\n    const maxAttempts = 3;\n\n    while (attempts < maxAttempts && !imgBuffer) {\n      attempts++;\n      try {\n        const controller = new AbortController();\n        const timeout = setTimeout(() => controller.abort(), 15000);\n        const imgResponse = await fetch(d.source_url, { signal: controller.signal });\n        clearTimeout(timeout);\n        \n        if (!imgResponse.ok) throw new Error(`HTTP ${imgResponse.status}`);\n        imgBuffer = Buffer.from(await imgResponse.arrayBuffer());\n      } catch (fetchErr) {\n        if (attempts >= maxAttempts) throw fetchErr;\n        await new Promise(r => setTimeout(r, 1000 * attempts));\n      }\n    }\n\n    // Calculate SHA-256 of downloaded file for integrity\n    const crypto = require('crypto');\n    const downloadHash = crypto.createHash('sha256').update(imgBuffer).digest('hex');\n\n    // Send to image-hasher for watermark extraction\n    const formData = new FormData();\n    formData.append('file', new Blob([imgBuffer]), 'suspect.png');\n\n    const extractRes = await fetch('http://image-hasher:8000/watermark/extract', {\n      method: 'POST',\n      body: formData\n    });\n\n    const extractData = await extractRes.json();\n    const watermarkText = extractData.watermark || '';\n    const watermarkFound = watermarkText.length > 0;\n\n    // Confidence scoring: valid watermarks contain printable ASCII,\n    // have reasonable length (8-128 chars), and don't contain only\n    // repeated characters\n    let confidence = 0;\n    if (watermarkFound) {\n      const printableRatio = (watermarkText.match(/[\\x20-\\x7E]/g) || []).length / watermarkText.length;\n      const uniqueChars = new Set(watermarkText).size;\n      const lengthOk = watermarkText.length >= 8 && watermarkText.length <= 256;\n      \n      confidence = 0;\n      if (printableRatio > 0.9) confidence += 40;\n      else if (printableRatio > 0.7) confidence += 20;\n      if (uniqueChars > 3) confidence += 30;\n      if (lengthOk) confidence += 30;\n    }\n\n    // Generate traitor_trace_id from watermark content\n    const traceId = watermarkFound && confidence >= 50\n      ? `TT-${crypto.createHash('md5').update(watermarkText).digest('hex').substring(0, 12).toUpperCase()}`\n      : null;\n\n    // Custody log: extraction completed\n    d.custody_log.push({\n      timestamp: new Date().toISOString(),\n      action: watermarkFound ? 'watermark_extracted' : 'no_watermark_detected',\n      performed_by: 'TRAITOR_TRACE_WORKFLOW',\n      details: {\n        download_hash_sha256: downloadHash,\n        download_size_bytes: imgBuffer.length,\n        download_attempts: attempts,\n        watermark_found: watermarkFound,\n        watermark_length: watermarkText.length,\n        confidence_score: confidence,\n        traitor_trace_id: traceId,\n        extraction_method: 'lsb_steganography'\n      }\n    });\n\n    results.push({\n      evidence_id: d.id,\n      tenant_id: d.tenant_id,\n      evidence_name: d.evidence_name,\n      source_platform: d.source_platform,\n      watermark_found: watermarkFound,\n      watermark_text: watermarkText || null,\n      confidence: confidence,\n      traitor_trace_id: traceId,\n      download_hash: downloadHash,\n      custody_log: d.custody_log,\n      status: 'checked'\n    });\n  } catch (err) {\n    d.custody_log.push({\n      timestamp: new Date().toISOString(),\n      action: 'extraction_failed',\n      performed_by: 'TRAITOR_TRACE_WORKFLOW',\n      details: { error: err.message, source_url: d.source_url }\n    });\n    results.push({\n      evidence_id: d.id,\n      tenant_id: d.tenant_id,\n      custody_log: d.custody_log,\n      status: 'error',\n      error: err.message,\n      watermark_found: false\n    });\n  }\n}\n\nreturn results;"
+      },
+      "id": "extract-watermarks",
+      "name": "Extract & Score Watermarks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "has-watermark",
+              "leftValue": "={{ $json.watermark_found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "min-confidence",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 50,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "watermark-check",
+      "name": "Watermark Confirmed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE forensic_evidence SET watermark_checked = true, watermark_signature = '{{ $json.watermark_text }}', traitor_trace_id = '{{ $json.traitor_trace_id }}', verification_status = 'traitor_identified', custody_log = '{{ JSON.stringify($json.custody_log) }}'::jsonb, updated_at = NOW() WHERE id = '{{ $json.evidence_id }}'",
+        "options": {}
+      },
+      "id": "mark-traitor",
+      "name": "Mark Traitor Identified",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE forensic_evidence SET watermark_checked = true, watermark_signature = NULL, traitor_trace_id = NULL, custody_log = '{{ JSON.stringify($json.custody_log) }}'::jsonb, updated_at = NOW() WHERE id = '{{ $json.evidence_id }}'",
+        "options": {}
+      },
+      "id": "mark-no-watermark",
+      "name": "Mark No Watermark",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Final custody log entry for traitor-identified path\nconst items = $input.all();\nfor (const item of items) {\n  const d = item.json;\n  const log = Array.isArray(d.custody_log) ? d.custody_log : [];\n  log.push({\n    timestamp: new Date().toISOString(),\n    action: 'traitor_trace_completed',\n    performed_by: 'TRAITOR_TRACE_WORKFLOW',\n    details: {\n      result: 'traitor_identified',\n      traitor_trace_id: d.traitor_trace_id,\n      confidence: d.confidence,\n      evidence_persisted: true\n    }\n  });\n  d.custody_log = log;\n}\nreturn items;"
+      },
+      "id": "log-completion",
+      "name": "Log: Trace Complete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NOTIFICATION_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "type",
+              "value": "traitor_identified"
+            },
+            {
+              "name": "evidence_id",
+              "value": "={{ $json.evidence_id }}"
+            },
+            {
+              "name": "traitor_trace_id",
+              "value": "={{ $json.traitor_trace_id }}"
+            },
+            {
+              "name": "watermark",
+              "value": "={{ $json.watermark_text }}"
+            },
+            {
+              "name": "confidence",
+              "value": "={{ $json.confidence }}"
+            },
+            {
+              "name": "platform",
+              "value": "={{ $json.source_platform }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-traitor",
+      "name": "Notify Traitor Found",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1650,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Untraced Matches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Untraced Matches": {
+      "main": [
+        [
+          {
+            "node": "Log: Trace Initiated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log: Trace Initiated": {
+      "main": [
+        [
+          {
+            "node": "Extract & Score Watermarks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract & Score Watermarks": {
+      "main": [
+        [
+          {
+            "node": "Watermark Confirmed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Watermark Confirmed?": {
+      "main": [
+        [
+          {
+            "node": "Mark Traitor Identified",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark No Watermark",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Traitor Identified": {
+      "main": [
+        [
+          {
+            "node": "Log: Trace Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log: Trace Complete": {
+      "main": [
+        [
+          {
+            "node": "Notify Traitor Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-12T20:15:00.000Z",
+  "versionId": "2",
+  "active": true
+}

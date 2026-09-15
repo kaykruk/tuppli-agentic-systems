@@ -1,0 +1,354 @@
+{
+  "name": "SOCIAL_MEDIA_AUTOPILOT",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-autopilot-trigger",
+        "options": {}
+      },
+      "id": "test-webhook-trigger",
+      "name": "Test Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        208,
+        150
+      ],
+      "webhookId": "test-autopilot-webhook"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "e931fa78-d06d-49d7-83ed-65f6f264858b",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "schema": "n8n",
+        "operation": "getAll",
+        "tableId": "content_history",
+        "limit": 5,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "status",
+              "condition": "eq",
+              "keyValue": "posted"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        432,
+        304
+      ],
+      "id": "d711f674-1eb6-4d49-872e-66f432403e05",
+      "name": "Get many rows",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const topics = $input.all().map(item => item.json.pillar || item.json.content || \"\").filter(t => t).join(', ');\nreturn { recent_topics: topics };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        304
+      ],
+      "id": "07439db8-4849-4b97-9b0f-a61e7050cacb",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "topic_list",
+              "value": "1. The mathematical cost of leaked Pay-Per-View videos.\n2. Why watermarks are useless against modern scraping bots.\n3. The rise of impersonator/catfish profiles on dating apps stealing fans' money.\n4. How automated DMCA takedowns directly to hosting providers beat manual Google SEO delisting teams."
+            }
+          ]
+        }
+      },
+      "id": "2bc8f152-7e04-4c59-bf7a-62fcfec81467",
+      "name": "Define Topics",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        880,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "prompt": "=Topics to cover: {{  $json.topic_list }}\n\nAvoid repeating or covering the same ground as these recent posts:\n{{  $node[\"Code in JavaScript\"].json.recent_topics }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Role: Chief Marketing Officer for Tuppli (Elite Anti-Scraping & Legal Tech)Framework: AIDA (Attention, Interest, Desire, Action)Psychology: Loss Aversion, Paradox of Choice (Tiered solutions)Banned Phrases: game-changer, revolutionary, seamless, leverage, streamline, delve, And honestly?, Unlock your potential.Voice: Human, active, opinionated. Contractions allowed. No em-dashes for dramatic effect.Task: Generate a high-performance Twitter thread based on the provided topic."
+            }
+          ]
+        }
+      },
+      "id": "18dca4dc-1707-44f2-9844-3ec9eaf19ca7",
+      "name": "LLM: Generate AIDA Thread",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.3,
+      "position": [
+        1104,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "8432b8aa-bc01-4475-802c-490ba560bbfd",
+      "name": "Google Gemini",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1104,
+        528
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "LDOFIwfA3xz3cu4l",
+          "name": "Gemini Admin"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const threadBlocks = $input.item.json.response.text.split('-----');\nconst formattedTweets = threadBlocks.map(block => block.trim()).filter(block => block.length > 0);\nreturn { tweets: formattedTweets };"
+      },
+      "id": "8a729e2f-fbe0-410a-afe1-6efd3cf0f3d6",
+      "name": "Split Thread into Array",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://tuppli.com/api/og/marketing?title={{ encodeURIComponent($json.tweets[0].split('\\n')[0]) }}&highlight={{ encodeURIComponent('Content Protected') }}&tag={{ encodeURIComponent('Autonomous Defense') }}",
+        "options": {}
+      },
+      "id": "e43d9b89-a342-4b6c-8f12-c516f4af8d1e",
+      "name": "Generate Marketing Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1520,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "useCustomSchema": true,
+        "schema": "n8n",
+        "tableId": "content_history",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "platform",
+              "fieldValue": "Twitter"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "pending"
+            },
+            {
+              "fieldId": "content",
+              "fieldValue": "={{ $node[\"Split Thread into Array\"].json[\"tweets\"].join('\\n\\n') }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1728,
+        304
+      ],
+      "id": "a3f4fdb4-6462-47fc-92ee-26b6b4208e37",
+      "name": "Supabase Insert",
+      "credentials": {
+        "supabaseApi": {
+          "id": "kR8zGvQyl8iF9qDb",
+          "name": "Tuppli Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8n.tuppli.com/webhook/telegram-approval-personal",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "platform",
+              "value": "Twitter"
+            },
+            {
+              "name": "content",
+              "value": "={{ $node[\"Supabase Insert\"].json[\"content\"] }}"
+            },
+            {
+              "name": "id",
+              "value": "={{ $node[\"Supabase Insert\"].json[\"id\"] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4012d464-cf9b-4d49-8677-1d0411cf76a0",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1936,
+        304
+      ]
+    }
+  ],
+  "connections": {
+    "Test Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many rows": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Define Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Topics": {
+      "main": [
+        [
+          {
+            "node": "LLM: Generate AIDA Thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "LLM: Generate AIDA Thread",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: Generate AIDA Thread": {
+      "main": [
+        [
+          {
+            "node": "Split Thread into Array",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Thread into Array": {
+      "main": [
+        [
+          {
+            "node": "Generate Marketing Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Marketing Image": {
+      "main": [
+        [
+          {
+            "node": "Supabase Insert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Insert": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

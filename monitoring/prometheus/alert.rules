@@ -1,0 +1,19 @@
+groups:
+- name: generic
+  rules:
+  - alert: InstanceDown
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+      description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+  - alert: HighResponseTime
+    expr: probe_duration_seconds > 0.5
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High API Response Time on {{ $labels.instance }}"
+      description: "Response time is greater than 0.5 seconds for 1m."

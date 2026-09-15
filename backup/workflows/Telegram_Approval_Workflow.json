@@ -1,0 +1,68 @@
+{
+    "name": "Tuppli Telegram Approval Bridge",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "social-approval",
+                "options": {}
+            },
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+                "text": "=🚀 *New {{$node[\"Webhook Trigger\"].json[\"platform\"]}} Draft for Tuppli*\n\n{{$node[\"Webhook Trigger\"].json[\"content\"]}}",
+                "additionalFields": {
+                    "parse_mode": "Markdown",
+                    "reply_markup": {
+                        "inline_keyboard": [
+                            [
+                                {
+                                    "text": "✅ Approve & Post",
+                                    "callback_data": "={{$node[\"Webhook Trigger\"].json[\"approval_cmd\"]}}"
+                                },
+                                {
+                                    "text": "✍️ Edit Draft",
+                                    "callback_data": "edit"
+                                }
+                            ]
+                        ]
+                    }
+                }
+            },
+            "name": "Telegram Send Message",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                350,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "telegram_bot_approval",
+                    "name": "Tuppli Approval Bot"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Telegram Send Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

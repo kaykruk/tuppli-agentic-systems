@@ -1,0 +1,917 @@
+{
+  "name": "WAITLIST_NURTURE_SEQUENCE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "supabase-waitlist-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook (Supabase DB Insert)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        200,
+        1200
+      ],
+      "webhookId": "aba31e4d-2dc6-48ee-aab5-15a0de78d101"
+    },
+    {
+      "parameters": {
+        "jsCode": "const record = $input.item.json.body?.record || $input.item.json.record || {};\nconst id = record.id || '00000000-0000-0000-0000-000000000000';\nconst bucket = parseInt(id.replace(/-/g, '').slice(-6), 16) % 5;\nreturn {\n  ...record,\n  bucket: isNaN(bucket) ? 0 : bucket\n};"
+      },
+      "id": "compute-hash",
+      "name": "Compute Round-Robin Bucket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "dataType": "number",
+        "value1": "={{ $json.bucket }}",
+        "rules": {
+          "rules": [
+            [
+              {
+                "operation": "equal",
+                "value1": "={{ $json.bucket }}",
+                "value2": 0
+              }
+            ],
+            [
+              {
+                "operation": "equal",
+                "value1": "={{ $json.bucket }}",
+                "value2": 1
+              }
+            ],
+            [
+              {
+                "operation": "equal",
+                "value1": "={{ $json.bucket }}",
+                "value2": 2
+              }
+            ],
+            [
+              {
+                "operation": "equal",
+                "value1": "={{ $json.bucket }}",
+                "value2": 3
+              }
+            ],
+            [
+              {
+                "operation": "equal",
+                "value1": "={{ $json.bucket }}",
+                "value2": 4
+              }
+            ]
+          ]
+        }
+      },
+      "id": "switch-router",
+      "name": "Round-Robin Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        600,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "🔒 Your spot is secured. ({{ $('Compute Round-Robin Bucket').item.json.metadata.position }} of 1000)",
+        "html": "Welcome to the Tuppli Founder's Cohort.<br><br>You have successfully claimed spot #{{ $('Compute Round-Robin Bucket').item.json.metadata.position }} out of the 1,000 exclusive beta spots. When our infrastructure goes live, your email address is locked in to receive a permanent 20% discount on our higher-tier autonomous protection plans.<br><br>We are currently scaling our headless browser clusters to handle the immense load of scanning the deep web. We will keep you updated on our progress.<br><br>The bots are coming. We're building the Iron Dome."
+      },
+      "id": "Postmark - Day 0",
+      "name": "Postmark - Day 0",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        800
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "postmark-creds",
+          "name": "Postmark"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "Postmark - Wait 7",
+      "name": "Postmark - Wait 7",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        800
+      ],
+      "webhookId": "wait-7-0-1772012300653",
+      "credentials": {
+        "smtp": {
+          "id": "postmark-creds",
+          "name": "Postmark"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "Why your watermark is failing. (Behind the tech)",
+        "html": "A lot of creators ask us why standard watermarks don't work anymore.<br><br>Here is the ugly truth we see on the dark web every day: Scraping bots use basic computer vision to strip watermarks from your Pay-Per-View content in roughly 0.4 seconds.<br><br>It takes us 3 seconds to hunt that source file down and execute a legally binding DMCA takedown to nuke it permanently.<br><br>Don't fight bots with humans. We are almost ready for launch."
+      },
+      "id": "Postmark - Day 7",
+      "name": "Postmark - Day 7",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        800
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "postmark-creds",
+          "name": "Postmark"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 14,
+        "unit": "days"
+      },
+      "id": "Postmark - Wait 14",
+      "name": "Postmark - Wait 14",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1500,
+        800
+      ],
+      "webhookId": "wait-14-0-1772012300653",
+      "credentials": {
+        "smtp": {
+          "id": "postmark-creds",
+          "name": "Postmark"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "The $150k Leak.",
+        "html": "Last week, we ran a test scrape on a private Telegram group. We found a single $15 PPV video that had been shared over 10,000 times.<br><br>That creator lost $150,000 in potential LTV overnight because their manual DMCA lawyer was asleep.<br><br>As a Tuppli Founder, you won't have to worry about this. Our 'Legal Enforcer' bots never sleep.<br><br>Launch is approaching. Make sure your billing details are ready when we open the gates."
+      },
+      "id": "Postmark - Day 21",
+      "name": "Postmark - Day 21",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1700,
+        800
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "postmark-creds",
+          "name": "Postmark"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "🔒 Your spot is secured. ({{ $('Compute Round-Robin Bucket').item.json.metadata.position }} of 1000)",
+        "html": "Welcome to the Tuppli Founder's Cohort.<br><br>You have successfully claimed spot #{{ $('Compute Round-Robin Bucket').item.json.metadata.position }} out of the 1,000 exclusive beta spots. When our infrastructure goes live, your email address is locked in to receive a permanent 20% discount on our higher-tier autonomous protection plans.<br><br>We are currently scaling our headless browser clusters to handle the immense load of scanning the deep web. We will keep you updated on our progress.<br><br>The bots are coming. We're building the Iron Dome."
+      },
+      "id": "Mailgun - Day 0",
+      "name": "Mailgun - Day 0",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        1000
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailgun-creds",
+          "name": "Mailgun"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "Mailgun - Wait 7",
+      "name": "Mailgun - Wait 7",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        1000
+      ],
+      "webhookId": "wait-7-1-1772012300653",
+      "credentials": {
+        "smtp": {
+          "id": "mailgun-creds",
+          "name": "Mailgun"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "Why your watermark is failing. (Behind the tech)",
+        "html": "A lot of creators ask us why standard watermarks don't work anymore.<br><br>Here is the ugly truth we see on the dark web every day: Scraping bots use basic computer vision to strip watermarks from your Pay-Per-View content in roughly 0.4 seconds.<br><br>It takes us 3 seconds to hunt that source file down and execute a legally binding DMCA takedown to nuke it permanently.<br><br>Don't fight bots with humans. We are almost ready for launch."
+      },
+      "id": "Mailgun - Day 7",
+      "name": "Mailgun - Day 7",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        1000
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailgun-creds",
+          "name": "Mailgun"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 14,
+        "unit": "days"
+      },
+      "id": "Mailgun - Wait 14",
+      "name": "Mailgun - Wait 14",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1500,
+        1000
+      ],
+      "webhookId": "wait-14-1-1772012300653",
+      "credentials": {
+        "smtp": {
+          "id": "mailgun-creds",
+          "name": "Mailgun"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "The $150k Leak.",
+        "html": "Last week, we ran a test scrape on a private Telegram group. We found a single $15 PPV video that had been shared over 10,000 times.<br><br>That creator lost $150,000 in potential LTV overnight because their manual DMCA lawyer was asleep.<br><br>As a Tuppli Founder, you won't have to worry about this. Our 'Legal Enforcer' bots never sleep.<br><br>Launch is approaching. Make sure your billing details are ready when we open the gates."
+      },
+      "id": "Mailgun - Day 21",
+      "name": "Mailgun - Day 21",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1700,
+        1000
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailgun-creds",
+          "name": "Mailgun"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "🔒 Your spot is secured. ({{ $('Compute Round-Robin Bucket').item.json.metadata.position }} of 1000)",
+        "html": "Welcome to the Tuppli Founder's Cohort.<br><br>You have successfully claimed spot #{{ $('Compute Round-Robin Bucket').item.json.metadata.position }} out of the 1,000 exclusive beta spots. When our infrastructure goes live, your email address is locked in to receive a permanent 20% discount on our higher-tier autonomous protection plans.<br><br>We are currently scaling our headless browser clusters to handle the immense load of scanning the deep web. We will keep you updated on our progress.<br><br>The bots are coming. We're building the Iron Dome."
+      },
+      "id": "Mailjet - Day 0",
+      "name": "Mailjet - Day 0",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        1200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailjet-creds",
+          "name": "Mailjet"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "Mailjet - Wait 7",
+      "name": "Mailjet - Wait 7",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        1200
+      ],
+      "webhookId": "wait-7-2-1772012300653",
+      "credentials": {
+        "smtp": {
+          "id": "mailjet-creds",
+          "name": "Mailjet"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "Why your watermark is failing. (Behind the tech)",
+        "html": "A lot of creators ask us why standard watermarks don't work anymore.<br><br>Here is the ugly truth we see on the dark web every day: Scraping bots use basic computer vision to strip watermarks from your Pay-Per-View content in roughly 0.4 seconds.<br><br>It takes us 3 seconds to hunt that source file down and execute a legally binding DMCA takedown to nuke it permanently.<br><br>Don't fight bots with humans. We are almost ready for launch."
+      },
+      "id": "Mailjet - Day 7",
+      "name": "Mailjet - Day 7",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        1200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailjet-creds",
+          "name": "Mailjet"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 14,
+        "unit": "days"
+      },
+      "id": "Mailjet - Wait 14",
+      "name": "Mailjet - Wait 14",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1500,
+        1200
+      ],
+      "webhookId": "wait-14-2-1772012300653",
+      "credentials": {
+        "smtp": {
+          "id": "mailjet-creds",
+          "name": "Mailjet"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "The $150k Leak.",
+        "html": "Last week, we ran a test scrape on a private Telegram group. We found a single $15 PPV video that had been shared over 10,000 times.<br><br>That creator lost $150,000 in potential LTV overnight because their manual DMCA lawyer was asleep.<br><br>As a Tuppli Founder, you won't have to worry about this. Our 'Legal Enforcer' bots never sleep.<br><br>Launch is approaching. Make sure your billing details are ready when we open the gates."
+      },
+      "id": "Mailjet - Day 21",
+      "name": "Mailjet - Day 21",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1700,
+        1200
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailjet-creds",
+          "name": "Mailjet"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "🔒 Your spot is secured. ({{ $('Compute Round-Robin Bucket').item.json.metadata.position }} of 1000)",
+        "html": "Welcome to the Tuppli Founder's Cohort.<br><br>You have successfully claimed spot #{{ $('Compute Round-Robin Bucket').item.json.metadata.position }} out of the 1,000 exclusive beta spots. When our infrastructure goes live, your email address is locked in to receive a permanent 20% discount on our higher-tier autonomous protection plans.<br><br>We are currently scaling our headless browser clusters to handle the immense load of scanning the deep web. We will keep you updated on our progress.<br><br>The bots are coming. We're building the Iron Dome."
+      },
+      "id": "Elastic Email - Day 0",
+      "name": "Elastic Email - Day 0",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        1400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "elasticemail-creds",
+          "name": "Elastic Email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "Elastic Email - Wait 7",
+      "name": "Elastic Email - Wait 7",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        1400
+      ],
+      "webhookId": "wait-7-3-1772012300654",
+      "credentials": {
+        "smtp": {
+          "id": "elasticemail-creds",
+          "name": "Elastic Email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "Why your watermark is failing. (Behind the tech)",
+        "html": "A lot of creators ask us why standard watermarks don't work anymore.<br><br>Here is the ugly truth we see on the dark web every day: Scraping bots use basic computer vision to strip watermarks from your Pay-Per-View content in roughly 0.4 seconds.<br><br>It takes us 3 seconds to hunt that source file down and execute a legally binding DMCA takedown to nuke it permanently.<br><br>Don't fight bots with humans. We are almost ready for launch."
+      },
+      "id": "Elastic Email - Day 7",
+      "name": "Elastic Email - Day 7",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        1400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "elasticemail-creds",
+          "name": "Elastic Email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 14,
+        "unit": "days"
+      },
+      "id": "Elastic Email - Wait 14",
+      "name": "Elastic Email - Wait 14",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1500,
+        1400
+      ],
+      "webhookId": "wait-14-3-1772012300654",
+      "credentials": {
+        "smtp": {
+          "id": "elasticemail-creds",
+          "name": "Elastic Email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "The $150k Leak.",
+        "html": "Last week, we ran a test scrape on a private Telegram group. We found a single $15 PPV video that had been shared over 10,000 times.<br><br>That creator lost $150,000 in potential LTV overnight because their manual DMCA lawyer was asleep.<br><br>As a Tuppli Founder, you won't have to worry about this. Our 'Legal Enforcer' bots never sleep.<br><br>Launch is approaching. Make sure your billing details are ready when we open the gates."
+      },
+      "id": "Elastic Email - Day 21",
+      "name": "Elastic Email - Day 21",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1700,
+        1400
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "elasticemail-creds",
+          "name": "Elastic Email"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "🔒 Your spot is secured. ({{ $('Compute Round-Robin Bucket').item.json.metadata.position }} of 1000)",
+        "html": "Welcome to the Tuppli Founder's Cohort.<br><br>You have successfully claimed spot #{{ $('Compute Round-Robin Bucket').item.json.metadata.position }} out of the 1,000 exclusive beta spots. When our infrastructure goes live, your email address is locked in to receive a permanent 20% discount on our higher-tier autonomous protection plans.<br><br>We are currently scaling our headless browser clusters to handle the immense load of scanning the deep web. We will keep you updated on our progress.<br><br>The bots are coming. We're building the Iron Dome."
+      },
+      "id": "MailerSend - Day 0",
+      "name": "MailerSend - Day 0",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        900,
+        1600
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailersend-creds",
+          "name": "MailerSend"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 7,
+        "unit": "days"
+      },
+      "id": "MailerSend - Wait 7",
+      "name": "MailerSend - Wait 7",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        1600
+      ],
+      "webhookId": "wait-7-4-1772012300654",
+      "credentials": {
+        "smtp": {
+          "id": "mailersend-creds",
+          "name": "MailerSend"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "Why your watermark is failing. (Behind the tech)",
+        "html": "A lot of creators ask us why standard watermarks don't work anymore.<br><br>Here is the ugly truth we see on the dark web every day: Scraping bots use basic computer vision to strip watermarks from your Pay-Per-View content in roughly 0.4 seconds.<br><br>It takes us 3 seconds to hunt that source file down and execute a legally binding DMCA takedown to nuke it permanently.<br><br>Don't fight bots with humans. We are almost ready for launch."
+      },
+      "id": "MailerSend - Day 7",
+      "name": "MailerSend - Day 7",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1300,
+        1600
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailersend-creds",
+          "name": "MailerSend"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 14,
+        "unit": "days"
+      },
+      "id": "MailerSend - Wait 14",
+      "name": "MailerSend - Wait 14",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1500,
+        1600
+      ],
+      "webhookId": "wait-14-4-1772012300654",
+      "credentials": {
+        "smtp": {
+          "id": "mailersend-creds",
+          "name": "MailerSend"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "kenechukwuudeh@tuppli.com",
+        "toEmail": "={{ $('Compute Round-Robin Bucket').item.json.email }}",
+        "subject": "The $150k Leak.",
+        "html": "Last week, we ran a test scrape on a private Telegram group. We found a single $15 PPV video that had been shared over 10,000 times.<br><br>That creator lost $150,000 in potential LTV overnight because their manual DMCA lawyer was asleep.<br><br>As a Tuppli Founder, you won't have to worry about this. Our 'Legal Enforcer' bots never sleep.<br><br>Launch is approaching. Make sure your billing details are ready when we open the gates."
+      },
+      "id": "MailerSend - Day 21",
+      "name": "MailerSend - Day 21",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1700,
+        1600
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "mailersend-creds",
+          "name": "MailerSend"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (Supabase DB Insert)": {
+      "main": [
+        [
+          {
+            "node": "Compute Round-Robin Bucket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Round-Robin Bucket": {
+      "main": [
+        [
+          {
+            "node": "Round-Robin Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Round-Robin Router": {
+      "main": [
+        [
+          {
+            "node": "Postmark - Day 0",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mailgun - Day 0",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mailjet - Day 0",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Elastic Email - Day 0",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "MailerSend - Day 0",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postmark - Day 0": {
+      "main": [
+        [
+          {
+            "node": "Postmark - Wait 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postmark - Wait 7": {
+      "main": [
+        [
+          {
+            "node": "Postmark - Day 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postmark - Day 7": {
+      "main": [
+        [
+          {
+            "node": "Postmark - Wait 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postmark - Wait 14": {
+      "main": [
+        [
+          {
+            "node": "Postmark - Day 21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailgun - Day 0": {
+      "main": [
+        [
+          {
+            "node": "Mailgun - Wait 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailgun - Wait 7": {
+      "main": [
+        [
+          {
+            "node": "Mailgun - Day 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailgun - Day 7": {
+      "main": [
+        [
+          {
+            "node": "Mailgun - Wait 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailgun - Wait 14": {
+      "main": [
+        [
+          {
+            "node": "Mailgun - Day 21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailjet - Day 0": {
+      "main": [
+        [
+          {
+            "node": "Mailjet - Wait 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailjet - Wait 7": {
+      "main": [
+        [
+          {
+            "node": "Mailjet - Day 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailjet - Day 7": {
+      "main": [
+        [
+          {
+            "node": "Mailjet - Wait 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mailjet - Wait 14": {
+      "main": [
+        [
+          {
+            "node": "Mailjet - Day 21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elastic Email - Day 0": {
+      "main": [
+        [
+          {
+            "node": "Elastic Email - Wait 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elastic Email - Wait 7": {
+      "main": [
+        [
+          {
+            "node": "Elastic Email - Day 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elastic Email - Day 7": {
+      "main": [
+        [
+          {
+            "node": "Elastic Email - Wait 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Elastic Email - Wait 14": {
+      "main": [
+        [
+          {
+            "node": "Elastic Email - Day 21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MailerSend - Day 0": {
+      "main": [
+        [
+          {
+            "node": "MailerSend - Wait 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MailerSend - Wait 7": {
+      "main": [
+        [
+          {
+            "node": "MailerSend - Day 7",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MailerSend - Day 7": {
+      "main": [
+        [
+          {
+            "node": "MailerSend - Wait 14",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MailerSend - Wait 14": {
+      "main": [
+        [
+          {
+            "node": "MailerSend - Day 21",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "versionId": "1628d6c8-2b81-4566-b489-3aa937a52e02",
+  "id": "waitlist-sequence-v2"
+}

@@ -1,0 +1,260 @@
+{
+  "name": "DECODE_INTELLIGENCE",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "decode-intelligence",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "decode-intelligence-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract intelligence data from webhook\nconst payload = $input.first().json.body;\n\nreturn {\n  intel_name: payload.intel_name,\n  intel_type: payload.intel_type,\n  source: payload.source,\n  classification: payload.classification || 'unclassified',\n  raw_data: payload.raw_data,\n  encoding_type: payload.encoding_type || 'base64',\n  metadata: payload.metadata || {},\n  received_at: new Date().toISOString()\n};"
+      },
+      "id": "extract-intel",
+      "name": "Extract Intelligence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decode intelligence data\nconst intel = $input.first().json;\nlet decoded = '';\nlet decodingMethod = '';\n\ntry {\n  switch (intel.encoding_type) {\n    case 'base64':\n      decoded = Buffer.from(intel.raw_data, 'base64').toString('utf8');\n      decodingMethod = 'base64_decode';\n      break;\n    case 'hex':\n      decoded = Buffer.from(intel.raw_data, 'hex').toString('utf8');\n      decodingMethod = 'hex_decode';\n      break;\n    case 'json':\n      decoded = JSON.parse(intel.raw_data);\n      decodingMethod = 'json_parse';\n      break;\n    default:\n      decoded = intel.raw_data;\n      decodingMethod = 'none';\n  }\n  \n  return {\n    ...intel,\n    decoded_data: typeof decoded === 'object' ? decoded : { content: decoded },\n    decoding_method: decodingMethod,\n    decoding_status: 'completed',\n    processed_at: new Date().toISOString()\n  };\n} catch (error) {\n  return {\n    ...intel,\n    decoded_data: null,\n    decoding_method: decodingMethod,\n    decoding_status: 'failed',\n    error_message: error.message,\n    processed_at: new Date().toISOString()\n  };\n}"
+      },
+      "id": "decode-data",
+      "name": "Decode Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract entities and relationships from decoded data\nconst intel = $input.first().json;\nconst decoded = intel.decoded_data;\n\n// Simple entity extraction (in production, use NLP/AI)\nconst entities = [];\nconst relationships = [];\nconst keywords = [];\n\nif (decoded && decoded.content) {\n  const content = typeof decoded.content === 'string' ? decoded.content : JSON.stringify(decoded.content);\n  \n  // Extract email addresses\n  const emails = content.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g) || [];\n  emails.forEach(email => {\n    entities.push({ type: 'email', value: email });\n  });\n  \n  // Extract IP addresses\n  const ips = content.match(/\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b/g) || [];\n  ips.forEach(ip => {\n    entities.push({ type: 'ip_address', value: ip });\n  });\n  \n  // Extract URLs\n  const urls = content.match(/https?:\\/\\/[^\\s]+/g) || [];\n  urls.forEach(url => {\n    entities.push({ type: 'url', value: url });\n  });\n  \n  // Extract keywords (simple word frequency)\n  const words = content.toLowerCase().match(/\\b[a-z]{4,}\\b/g) || [];\n  const wordFreq = {};\n  words.forEach(word => {\n    wordFreq[word] = (wordFreq[word] || 0) + 1;\n  });\n  \n  keywords.push(...Object.keys(wordFreq)\n    .sort((a, b) => wordFreq[b] - wordFreq[a])\n    .slice(0, 10));\n}\n\n// Calculate confidence score\nconst confidence = entities.length > 0 ? Math.min(0.95, 0.5 + (entities.length * 0.05)) : 0.3;\n\nreturn {\n  ...intel,\n  entities: entities,\n  relationships: relationships,\n  keywords: keywords,\n  confidence_score: confidence,\n  analysis_results: {\n    entity_count: entities.length,\n    keyword_count: keywords.length,\n    analysis_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "extract-entities",
+      "name": "Extract Entities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "intelligence_data",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "intel_name",
+              "fieldValue": "={{ $json.intel_name }}"
+            },
+            {
+              "fieldId": "intel_type",
+              "fieldValue": "={{ $json.intel_type }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldId": "classification",
+              "fieldValue": "={{ $json.classification }}"
+            },
+            {
+              "fieldId": "raw_data",
+              "fieldValue": "={{ $json.raw_data }}"
+            },
+            {
+              "fieldId": "decoded_data",
+              "fieldValue": "={{ JSON.stringify($json.decoded_data) }}"
+            },
+            {
+              "fieldId": "encoding_type",
+              "fieldValue": "={{ $json.encoding_type }}"
+            },
+            {
+              "fieldId": "decoding_method",
+              "fieldValue": "={{ $json.decoding_method }}"
+            },
+            {
+              "fieldId": "decoding_status",
+              "fieldValue": "={{ $json.decoding_status }}"
+            },
+            {
+              "fieldId": "entities",
+              "fieldValue": "={{ JSON.stringify($json.entities) }}"
+            },
+            {
+              "fieldId": "relationships",
+              "fieldValue": "={{ JSON.stringify($json.relationships) }}"
+            },
+            {
+              "fieldId": "keywords",
+              "fieldValue": "={{ JSON.stringify($json.keywords) }}"
+            },
+            {
+              "fieldId": "confidence_score",
+              "fieldValue": "={{ $json.confidence_score }}"
+            },
+            {
+              "fieldId": "analysis_results",
+              "fieldValue": "={{ JSON.stringify($json.analysis_results) }}"
+            },
+            {
+              "fieldId": "received_at",
+              "fieldValue": "={{ $json.received_at }}"
+            },
+            {
+              "fieldId": "processed_at",
+              "fieldValue": "={{ $json.processed_at }}"
+            },
+            {
+              "fieldId": "metadata",
+              "fieldValue": "={{ JSON.stringify($json.metadata) }}"
+            }
+          ]
+        }
+      },
+      "id": "store-intelligence",
+      "name": "Store in Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate processing summary\nconst intel = $input.first().json;\n\nreturn {\n  status: 'success',\n  intelligence_id: intel.id,\n  intel_name: intel.intel_name,\n  decoding_status: intel.decoding_status,\n  entities_found: intel.entities.length,\n  keywords_extracted: intel.keywords.length,\n  confidence_score: intel.confidence_score,\n  processed_at: intel.processed_at,\n  message: `Intelligence '${intel.intel_name}' processed successfully with ${intel.entities.length} entities extracted`\n};"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "webhook-response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Decode Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode Data": {
+      "main": [
+        [
+          {
+            "node": "Extract Entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Entities": {
+      "main": [
+        [
+          {
+            "node": "Store in Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store in Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "active": false, "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-20T17:00:00.000Z",
+  "versionId": "1",
+  "active": true
+}

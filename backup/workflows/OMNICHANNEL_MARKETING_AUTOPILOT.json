@@ -1,0 +1,235 @@
+{
+  "name": "OMNICHANNEL_MARKETING_AUTOPILOT",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days"
+            }
+          ]
+        }
+      },
+      "id": "trigger-daily",
+      "name": "Daily Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "topic",
+              "value": "The hidden cost of piracy: How tracing the mathematical Life-Time Value (LTV) lost from a single leaked $15 pay-per-view video shows creators are losing hundreds of thousands overnight to automated scraping bots."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-topic",
+      "name": "Define Daily Topic",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gemini-1.5-flash",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "model-gemini",
+      "name": "Google Gemini",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        600,
+        600
+      ],
+      "credentials": {
+        "googleGeminiChatApi": {
+          "id": "gemini-creds",
+          "name": "Gemini Admin"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.topic }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Write a Twitter/X thread for Tuppli (Anti-Piracy SaaS for high-earning creators) using the AIDA framework based on the provided topic.\n\nKeep it aggressive and financial-focused. 3-5 tweets max. Use '🧵👇' for the hook."
+            }
+          ]
+        }
+      },
+      "id": "llm-aida",
+      "name": "X: AIDA Thread",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.topic }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Write a LinkedIn B2B post directly targeting OnlyFans Management Agencies using the PAS (Problem-Agitation-Solution) framework based on the provided topic.\n\nPosition Tuppli as the ultimate autonomous 'Iron Dome' for their roster."
+            }
+          ]
+        }
+      },
+      "id": "llm-pas",
+      "name": "LinkedIn: PAS Post",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.topic }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Write a short-form video script (TikTok/IG Reels) for Tuppli using the Hook-Retain-Reward framework based on the provided topic.\n\nFormat as text on-screen prompts for a faceless b-roll video."
+            }
+          ]
+        }
+      },
+      "id": "llm-hrr",
+      "name": "TikTok/IG: HRR Script",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        600,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.topic }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Write a direct email pitch to a Creator Management Agency using the BAB (Before-After-Bridge) framework based on the provided topic.\n\nOffer them a massive reduction in the manual labor of sending DMCA takedowns via Tuppli's automation API."
+            }
+          ]
+        }
+      },
+      "id": "llm-bab",
+      "name": "Email: BAB Pitch",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.4,
+      "position": [
+        600,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "content": "This workflow executes every morning.\nIt defines a core marketing topic, then simultaneously spins up 4 Gemini AI agents to rewrite that topic into 4 distinct psychological frameworks (AIDA, PAS, HRR, BAB).",
+        "height": 250,
+        "width": 300
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        150,
+        50
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Trigger": {
+      "main": [
+        [
+          {
+            "node": "Define Daily Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Daily Topic": {
+      "main": [
+        [
+          {
+            "node": "X: AIDA Thread",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LinkedIn: PAS Post",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "TikTok/IG: HRR Script",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email: BAB Pitch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "X: AIDA Thread",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "LinkedIn: PAS Post",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "TikTok/IG: HRR Script",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Email: BAB Pitch",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "omni-marketing-v3"
+}

@@ -1,0 +1,55 @@
+{
+    "name": "Tuppli Slack Approval Bridge",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "social-approval",
+                "options": {}
+            },
+            "name": "Webhook Trigger",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "method": "POST",
+                "url": "={{$env.SLACK_WEBHOOK_URL}}",
+                "sendBody": true,
+                "bodyParameters": {
+                    "parameters": [
+                        {
+                            "name": "text",
+                            "value": "=🚀 *New {{$node[\"Webhook Trigger\"].json[\"platform\"]}} Draft for Tuppli*\n\n{{$node[\"Webhook Trigger\"].json[\"content\"]}}"
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "name": "HTTP Request",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 3,
+            "position": [
+                350,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "HTTP Request",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

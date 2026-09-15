@@ -1,0 +1,265 @@
+{
+    "annotations": {
+        "list": []
+    },
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 0,
+    "id": null,
+    "links": [],
+    "liveNow": false,
+    "panels": [
+        {
+            "title": "Supabase Active Connections",
+            "type": "timeseries",
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "expr": "pg_stat_activity_count",
+                    "legendFormat": "{{datname}} - {{state}}",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "lineWidth": 2,
+                        "fillOpacity": 10
+                    }
+                },
+                "overrides": []
+            }
+        },
+        {
+            "title": "Database Size (bytes)",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 12,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "expr": "pg_database_size_bytes",
+                    "legendFormat": "{{datname}}",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "bytes",
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "value": null,
+                                "color": "green"
+                            },
+                            {
+                                "value": 500000000,
+                                "color": "yellow"
+                            },
+                            {
+                                "value": 1000000000,
+                                "color": "red"
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            }
+        },
+        {
+            "title": "Rows Inserted / Updated / Deleted",
+            "type": "timeseries",
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 8
+            },
+            "targets": [
+                {
+                    "expr": "rate(pg_stat_user_tables_n_tup_ins[5m])",
+                    "legendFormat": "inserts - {{relname}}",
+                    "refId": "A"
+                },
+                {
+                    "expr": "rate(pg_stat_user_tables_n_tup_upd[5m])",
+                    "legendFormat": "updates - {{relname}}",
+                    "refId": "B"
+                },
+                {
+                    "expr": "rate(pg_stat_user_tables_n_tup_del[5m])",
+                    "legendFormat": "deletes - {{relname}}",
+                    "refId": "C"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "palette-classic"
+                    },
+                    "custom": {
+                        "lineWidth": 2,
+                        "fillOpacity": 10
+                    }
+                },
+                "overrides": []
+            }
+        },
+        {
+            "title": "Cache Hit Ratio",
+            "type": "gauge",
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 8,
+                "w": 6,
+                "x": 12,
+                "y": 8
+            },
+            "targets": [
+                {
+                    "expr": "pg_stat_database_blks_hit / (pg_stat_database_blks_hit + pg_stat_database_blks_read)",
+                    "legendFormat": "{{datname}}",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "unit": "percentunit",
+                    "min": 0,
+                    "max": 1,
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "value": null,
+                                "color": "red"
+                            },
+                            {
+                                "value": 0.9,
+                                "color": "yellow"
+                            },
+                            {
+                                "value": 0.95,
+                                "color": "green"
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            }
+        },
+        {
+            "title": "Deadlocks",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 18,
+                "y": 0
+            },
+            "targets": [
+                {
+                    "expr": "pg_stat_database_deadlocks",
+                    "legendFormat": "{{datname}}",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "value": null,
+                                "color": "green"
+                            },
+                            {
+                                "value": 1,
+                                "color": "red"
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            }
+        },
+        {
+            "title": "Slow Queries (> 1s)",
+            "type": "stat",
+            "datasource": "Prometheus",
+            "gridPos": {
+                "h": 4,
+                "w": 6,
+                "x": 18,
+                "y": 4
+            },
+            "targets": [
+                {
+                    "expr": "pg_stat_statements_calls{queryid=~\".+\"}",
+                    "legendFormat": "slow queries",
+                    "refId": "A"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "color": {
+                        "mode": "thresholds"
+                    },
+                    "thresholds": {
+                        "steps": [
+                            {
+                                "value": null,
+                                "color": "green"
+                            },
+                            {
+                                "value": 5,
+                                "color": "yellow"
+                            },
+                            {
+                                "value": 20,
+                                "color": "red"
+                            }
+                        ]
+                    }
+                },
+                "overrides": []
+            }
+        }
+    ],
+    "schemaVersion": 39,
+    "tags": [
+        "supabase",
+        "database"
+    ],
+    "templating": {
+        "list": []
+    },
+    "time": {
+        "from": "now-6h",
+        "to": "now"
+    },
+    "title": "Supabase Database Metrics",
+    "uid": "supabase-db-metrics"
+}

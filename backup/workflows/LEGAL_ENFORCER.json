@@ -1,0 +1,442 @@
+{
+  "name": "LEGAL_ENFORCER",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "Daily at 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT lc.*, fe.source_url, fe.source_platform, fe.verification_status FROM legal_cases lc LEFT JOIN forensic_evidence fe ON fe.id::text = ANY(string_to_array(lc.evidence_ids, ',')) WHERE lc.status IN ('open', 'investigating', 'pending') ORDER BY lc.priority DESC, lc.deadline_date ASC",
+        "options": {}
+      },
+      "id": "fetch-active-cases",
+      "name": "Fetch Active Cases",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const cases = $input.all();\nconst now = new Date();\nconst alerts = [];\nconst deindexQueue = [];\nconst dmcaQueue = [];\nconst escalationQueue = [];\nconst socialReportQueue = [];\n\nfor (const item of cases) {\n  const c = item.json;\n  \n  // Deadline alerts\n  if (c.deadline_date) {\n    const daysUntil = Math.ceil((new Date(c.deadline_date) - now) / 86400000);\n    if (daysUntil <= 7 && daysUntil > 0) {\n      alerts.push({\n        case_id: c.id,\n        case_number: c.case_number,\n        alert_type: daysUntil <= 3 ? 'urgent' : 'warning',\n        message: `Case ${c.case_number} deadline in ${daysUntil} days`\n      });\n    }\n  }\n  \n  // Auto de-index: if evidence returns 404 (verified removed)\n  if (c.source_url && c.verification_status === 'removed') {\n    deindexQueue.push({ url: c.source_url, case_id: c.id });\n  }\n  \n  // Auto DMCA via Social Enforcer: if evidence is still live and case is open > 3 days\n  if (c.source_url && c.verification_status !== 'removed' && c.status === 'open') {\n    const created = new Date(c.created_at || now);\n    const daysSinceOpen = Math.ceil((now - created) / 86400000);\n    if (daysSinceOpen > 3) {\n      dmcaQueue.push({ url: c.source_url, case_id: c.id, case_number: c.case_number });\n    }\n    // Escalation: if DMCA was already sent > 5 days ago and content is still live\n    if (daysSinceOpen > 5 && (c.escalation_level || 0) < 3) {\n      try {\n        const domain = new URL(c.source_url).hostname;\n        escalationQueue.push({ domain, case_id: c.id, current_level: c.escalation_level || 0 });\n      } catch(e) {}\n    }\n  }\n  \n  // Social media impersonator/content reports\n  const platform = (c.source_platform || '').toLowerCase();\n  const socialPlatforms = ['reddit','twitter','x','tiktok','instagram','facebook','telegram'];\n  if (socialPlatforms.includes(platform) && c.source_url) {\n    socialReportQueue.push({\n      platform: platform === 'x' ? 'twitter' : platform,\n      content_url: c.source_url,\n      report_type: c.is_impersonator ? 'impersonator' : 'copyright',\n      creator_name: c.creator_name || 'Unknown Creator',\n      case_id: c.id\n    });\n  }\n}\n\nreturn [{ json: { alerts, deindexQueue, dmcaQueue, escalationQueue, socialReportQueue } }];"
+      },
+      "id": "triage-cases",
+      "name": "Triage Cases",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst items = data.deindexQueue || [];\nreturn items.map(i => ({ json: i }));"
+      },
+      "id": "split-deindex",
+      "name": "Split De-index Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://legal-automation:4000/deindex",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.url }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deindex-request",
+      "name": "De-index URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst items = data.dmcaQueue || [];\nreturn items.map(i => ({ json: i }));"
+      },
+      "id": "split-dmca",
+      "name": "Split DMCA Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://legal-automation:4000/dmca",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{ $json.url }}"
+            },
+            {
+              "name": "copyright_owner",
+              "value": "={{ $env.COPYRIGHT_OWNER || 'Content Creator' }}"
+            },
+            {
+              "name": "contact_email",
+              "value": "={{ $env.DMCA_CONTACT_EMAIL || 'legal@tuppli.com' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dmca-request",
+      "name": "Send DMCA Notice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst items = data.escalationQueue || [];\nreturn items.map(i => ({ json: i }));"
+      },
+      "id": "split-escalation",
+      "name": "Split Escalation Queue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://social-enforcer:4003/escalate",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "domain",
+              "value": "={{ $json.domain }}"
+            },
+            {
+              "name": "current_level",
+              "value": "={{ $json.current_level }}"
+            },
+            {
+              "name": "case_id",
+              "value": "={{ $json.case_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "escalate-request",
+      "name": "Escalate to CDN/Registrar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst items = data.socialReportQueue || [];\nreturn items.map(i => ({ json: i }));"
+      },
+      "id": "split-social",
+      "name": "Split Social Reports",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://social-enforcer:4003/report",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "platform",
+              "value": "={{ $json.platform }}"
+            },
+            {
+              "name": "content_url",
+              "value": "={{ $json.content_url }}"
+            },
+            {
+              "name": "report_type",
+              "value": "={{ $json.report_type }}"
+            },
+            {
+              "name": "creator_name",
+              "value": "={{ $json.creator_name }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "social-report-request",
+      "name": "Report to Platform",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst alerts = data.alerts || [];\nif (alerts.length === 0) return [];\nconst report = {\n  report_date: new Date().toISOString(),\n  report_type: 'legal_compliance_daily',\n  total_alerts: alerts.length,\n  urgent_count: alerts.filter(a => a.alert_type === 'urgent').length,\n  deindex_submitted: (data.deindexQueue || []).length,\n  dmca_submitted: (data.dmcaQueue || []).length,\n  alerts,\n  summary: `${alerts.length} deadline alerts, ${(data.deindexQueue || []).length} de-index requests, ${(data.dmcaQueue || []).length} DMCA notices`\n};\nreturn [{ json: report }];"
+      },
+      "id": "generate-report",
+      "name": "Generate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.NOTIFICATION_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "report",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-notifications",
+      "name": "Send Notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "legal-enforcer-test",
+        "options": {}
+      },
+      "id": "test-webhook-trigger",
+      "name": "Test Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        100
+      ],
+      "webhookId": "legal-enforcer-test-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate webhook authentication\nconst headers = $input.first().json.headers;\nconst expectedToken = $env.N8N_WEBHOOK_AUTH_TOKEN;\nconst authHeader = $env.N8N_WEBHOOK_AUTH_HEADER || 'X-Lysis-Auth';\n\nconst receivedToken = headers[authHeader.toLowerCase()] || headers[authHeader];\n\nif (!expectedToken) {\n  throw new Error('N8N_WEBHOOK_AUTH_TOKEN not configured');\n}\n\nif (!receivedToken || receivedToken !== expectedToken) {\n  throw new Error('Unauthorized: Invalid or missing auth token');\n}\n\nreturn $input.first().json;"
+      },
+      "id": "validate-test-auth",
+      "name": "Validate Test Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Daily at 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Cases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Active Cases": {
+      "main": [
+        [
+          {
+            "node": "Triage Cases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Triage Cases": {
+      "main": [
+        [
+          {
+            "node": "Split De-index Queue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split DMCA Queue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Escalation Queue",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split Social Reports",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Escalation Queue": {
+      "main": [
+        [
+          {
+            "node": "Escalate to CDN/Registrar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Social Reports": {
+      "main": [
+        [
+          {
+            "node": "Report to Platform",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split De-index Queue": {
+      "main": [
+        [
+          {
+            "node": "De-index URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split DMCA Queue": {
+      "main": [
+        [
+          {
+            "node": "Send DMCA Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Send Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Test Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Test Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch Active Cases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-12T04:00:00.000Z",
+  "versionId": "2",
+  "active": true
+}

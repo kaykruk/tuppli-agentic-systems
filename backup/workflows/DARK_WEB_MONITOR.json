@@ -1,0 +1,293 @@
+{
+  "name": "DARK_WEB_MONITOR_V2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Hourly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM recon_targets WHERE type = 'onion' AND (last_scanned_at IS NULL OR last_scanned_at < NOW() - INTERVAL '1 hour') AND status != 'suspended' LIMIT 5",
+        "options": {}
+      },
+      "id": "fetch-onion-targets",
+      "name": "Fetch Onion Targets",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-in-batches",
+      "name": "Split in Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://dark-web-scanner:8001/scan",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "urls",
+              "value": "={{ [$json.target_value] }}"
+            },
+            {
+              "name": "keywords",
+              "value": "[\"leak\", \"database\", \"exposed\", \"private\"]"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "scan-onion-site",
+      "name": "Scan Onion Site",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst scanResult = result.results[0];\nconst target = $('Split in Batches').first().json;\n\nreturn {\n  target_id: target.id,\n  tenant_id: target.tenant_id,\n  url: scanResult.url,\n  status: scanResult.status,\n  hits: scanResult.hits || [],\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "process-scan-results",
+      "name": "Process Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hits.length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-hits",
+      "name": "Found Hits?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "intelligence_data",
+        "limit": 1,
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "tenant_id",
+              "fieldValue": "={{ $json.tenant_id }}"
+            },
+            {
+              "fieldId": "source",
+              "fieldValue": "dark_web"
+            },
+            {
+              "fieldId": "intel_type",
+              "fieldValue": "leak_detected"
+            },
+            {
+              "fieldId": "data",
+              "fieldValue": "={{ JSON.stringify($json.hits) }}"
+            },
+            {
+              "fieldId": "severity",
+              "fieldValue": "high"
+            },
+            {
+              "fieldId": "url",
+              "fieldValue": "={{ $json.url }}"
+            }
+          ]
+        }
+      },
+      "id": "log-intelligence",
+      "name": "Log Intelligence",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "recon_targets",
+        "updateKey": "id",
+        "limit": 1,
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "last_scanned_at",
+              "fieldValue": "={{ $json.timestamp }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "active"
+            }
+          ]
+        },
+        "matchType": "id",
+        "id": "={{ $json.target_id }}"
+      },
+      "id": "update-target-timestamp",
+      "name": "Update Target Scan Time",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Hourly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Onion Targets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Onion Targets": {
+      "main": [
+        [
+          {
+            "node": "Split in Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split in Batches": {
+      "main": [
+        [
+          {
+            "node": "Scan Onion Site",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan Onion Site": {
+      "main": [
+        [
+          {
+            "node": "Process Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Results": {
+      "main": [
+        [
+          {
+            "node": "Found Hits?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found Hits?": {
+      "main": [
+        [
+          {
+            "node": "Log Intelligence",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Target Scan Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Target Scan Time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1"
+}

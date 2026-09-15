@@ -1,0 +1,303 @@
+{
+  "name": "MASTER_VAULT_SYNC",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-sync-trigger",
+      "name": "Daily at 2 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM vault_items WHERE sync_status IN ('pending', 'failed') OR (sync_status = 'synced' AND last_synced_at < NOW() - INTERVAL '24 hours') ORDER BY priority DESC",
+        "options": {}
+      },
+      "id": "fetch-vault-items",
+      "name": "Fetch Vault Items",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "split-items",
+      "name": "Split Into Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Encrypt sensitive data before sync\nconst crypto = require('crypto');\nconst item = $input.first().json;\n\n// In production, use proper encryption with KMS\nconst algorithm = 'aes-256-gcm';\nconst key = Buffer.from($env.VAULT_ENCRYPTION_KEY || 'default-key-change-me-in-production', 'utf8');\nconst iv = crypto.randomBytes(16);\n\nconst cipher = crypto.createCipheriv(algorithm, key, iv);\nlet encrypted = cipher.update(item.encrypted_data || '', 'utf8', 'hex');\nencrypted += cipher.final('hex');\nconst authTag = cipher.getAuthTag();\n\nreturn {\n  id: item.id,\n  item_name: item.item_name,\n  item_type: item.item_type,\n  encrypted_payload: {\n    data: encrypted,\n    iv: iv.toString('hex'),\n    authTag: authTag.toString('hex'),\n    algorithm: algorithm\n  },\n  metadata: item.metadata,\n  version: item.version || 1\n};"
+      },
+      "id": "encrypt-data",
+      "name": "Encrypt Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VAULT_SYNC_ENDPOINT }}/sync",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "item_id",
+              "value": "={{ $json.id }}"
+            },
+            {
+              "name": "item_name",
+              "value": "={{ $json.item_name }}"
+            },
+            {
+              "name": "encrypted_payload",
+              "value": "={{ JSON.stringify($json.encrypted_payload) }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ JSON.stringify($json.metadata) }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "sync-to-vault",
+      "name": "Sync to External Vault",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify sync integrity\nconst original = $input.first().json;\nconst syncResponse = $input.last().json;\n\nconst isSuccess = syncResponse.status === 'success' || syncResponse.statusCode === 200;\n\nreturn {\n  id: original.id,\n  sync_status: isSuccess ? 'synced' : 'failed',\n  last_synced_at: new Date().toISOString(),\n  sync_destination: $env.VAULT_SYNC_ENDPOINT,\n  version: original.version + 1,\n  sync_result: syncResponse\n};"
+      },
+      "id": "verify-sync",
+      "name": "Verify Sync Integrity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "vault_items",
+        "filterType": "manual",
+        "matchBy": "id",
+        "id": "={{ $json.id }}",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "sync_status",
+              "fieldValue": "={{ $json.sync_status }}"
+            },
+            {
+              "fieldId": "last_synced_at",
+              "fieldValue": "={{ $json.last_synced_at }}"
+            },
+            {
+              "fieldId": "sync_destination",
+              "fieldValue": "={{ $json.sync_destination }}"
+            },
+            {
+              "fieldId": "version",
+              "fieldValue": "={{ $json.version }}"
+            }
+          ]
+        }
+      },
+      "id": "update-sync-status",
+      "name": "Update Sync Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-credentials",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "master-vault-test",
+        "options": {}
+      },
+      "id": "test-webhook-trigger",
+      "name": "Test Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        100
+      ],
+      "webhookId": "master-vault-test-id"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate webhook authentication\nconst headers = $input.first().json.headers;\nconst expectedToken = $env.N8N_WEBHOOK_AUTH_TOKEN;\nconst authHeader = $env.N8N_WEBHOOK_AUTH_HEADER || 'X-Lysis-Auth';\n\nconst receivedToken = headers[authHeader.toLowerCase()] || headers[authHeader];\n\nif (!expectedToken) {\n  throw new Error('N8N_WEBHOOK_AUTH_TOKEN not configured');\n}\n\nif (!receivedToken || receivedToken !== expectedToken) {\n  throw new Error('Unauthorized: Invalid or missing auth token');\n}\n\nreturn $input.first().json;"
+      },
+      "id": "validate-test-auth",
+      "name": "Validate Test Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Daily at 2 AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Vault Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Vault Items": {
+      "main": [
+        [
+          {
+            "node": "Split Into Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Items": {
+      "main": [
+        [
+          {
+            "node": "Encrypt Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Encrypt Data": {
+      "main": [
+        [
+          {
+            "node": "Sync to External Vault",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sync to External Vault": {
+      "main": [
+        [
+          {
+            "node": "Verify Sync Integrity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Sync Integrity": {
+      "main": [
+        [
+          {
+            "node": "Update Sync Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Sync Status": {
+      "main": [
+        [
+          {
+            "node": "Split Into Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Test Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Test Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Test Auth": {
+      "main": [
+        [
+          {
+            "node": "Fetch Vault Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-20T17:00:00.000Z",
+  "versionId": "1",
+  "active": true
+}
