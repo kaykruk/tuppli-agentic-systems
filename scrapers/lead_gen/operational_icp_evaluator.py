@@ -94,23 +94,35 @@ class OperationalICPEvaluator:
             operational_clues=company_data.get("operational_clues", "")[:1000]
         )
 
-        try:
-            response = self.client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=prompt,
-                config={"response_mime_type": "application/json", "temperature": 0.3}
-            )
-            data = json.loads(response.text.strip())
-            
-            # Anti-slop sanity filter
-            icebreaker = data.get("icebreaker", "")
-            cleaned_icebreaker = self._sanitize_icebreaker(icebreaker)
-            data["icebreaker"] = cleaned_icebreaker
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model='gemini-3.6-flash',
+                    contents=prompt,
+                    config={"response_mime_type": "application/json", "temperature": 0.3}
+                )
+                data = json.loads(response.text.strip())
+                
+                # Anti-slop sanity filter
+                icebreaker = data.get("icebreaker", "")
+                cleaned_icebreaker = self._sanitize_icebreaker(icebreaker)
+                data["icebreaker"] = cleaned_icebreaker
 
-            return data
-        except Exception as e:
-            logger.error(f"Error evaluating company {company_data.get('company_name')}: {e}")
-            return self._heuristic_fallback(company_data)
+                return data
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    wait_time = 35 * (attempt + 1)  # 35s, 70s, 105s
+                    logger.warning(f"⏳ Rate limited. Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                    time.sleep(wait_time)
+                    continue
+                logger.error(f"Error evaluating company {company_data.get('company_name')}: {e}")
+                return self._heuristic_fallback(company_data)
+        
+        logger.warning(f"Exhausted retries for {company_data.get('company_name')}. Using heuristic fallback.")
+        return self._heuristic_fallback(company_data)
 
     def _sanitize_icebreaker(self, text: str) -> str:
         """Removes em-dashes and any accidental banned phrases."""

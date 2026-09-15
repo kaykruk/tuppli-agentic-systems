@@ -18,6 +18,7 @@ SERVICE_ACCOUNT_FILE = os.getenv(
 HEADERS = [
     "Company Name",
     "Website URL",
+    "Target City",
     "Niche / Industry",
     "ICP Fit Score (1-10)",
     "ICP Fit Reason",
@@ -66,7 +67,7 @@ class SheetsSync:
             if not existing_headers:
                 logger.info("Sheet is empty. Adding header row...")
                 self.sheet.insert_row(HEADERS, 1)
-                self.sheet.format("A1:M1", {
+                self.sheet.format("A1:N1", {
                     "textFormat": {"bold": True, "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0}},
                     "backgroundColor": {"red": 0.08, "green": 0.18, "blue": 0.36},
                     "horizontalAlignment": "CENTER"
@@ -104,6 +105,7 @@ class SheetsSync:
             row = [
                 lead.get("company_name", ""),
                 lead.get("website_url", ""),
+                lead.get("city", ""),
                 lead.get("niche_industry", ""),
                 str(lead.get("icp_score", "")),
                 lead.get("icp_reason", ""),

@@ -6,74 +6,112 @@ import urllib.parse
 from typing import List, Dict, Any, Optional
 import requests
 from bs4 import BeautifulSoup
+from ddgs import DDGS
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
 
 logger = logging.getLogger("BusinessRecon")
 
-DEFAULT_SEARCH_QUERIES = [
-    '"freight brokerage" "load coordination" "contact us"',
-    '"3PL logistics" "dispatch operations" "about us"',
-    '"insurance claims management" "third party administrator" "contact"',
-    '"commercial loan processing" "mortgage underwriting services"',
-    '"property management" "maintenance dispatch" "operations"',
-    '"healthcare credentialing services" "provider enrollment" "contact"'
+CITIES = [
+    "Chicago IL",
+    "Dallas TX"
+]
+
+# Queries designed to surface small, owner-operated businesses (5-50 employees)
+# These use language that small businesses actually put on their websites
+BASE_QUERIES = [
+    'trucking company owner operated',
+    'freight broker small team',
+    'property management company locally owned',
+    'medical billing company small business',
+    'insurance agency claims processing',
+    'mortgage broker independent',
+    'home health agency scheduling',
+    'staffing agency dispatch coordinator',
+    'auto body shop fleet management',
+    'hvac company service dispatch',
+]
+
+# Enterprise companies to automatically skip — these are too big for a one-man team
+ENTERPRISE_BLOCKLIST = [
+    "fedex", "ups", "amazon", "walmart", "target", "costco",
+    "xpo", "chrobinson", "hubgroup", "jbhunt", "schneider",
+    "flexport", "uber", "lyft", "convoy", "loadsmart",
+    "kinaxis", "oracle", "sap", "salesforce", "microsoft",
+    "harborfreight", "homedepot", "lowes", "menards",
+    "statefarm", "allstate", "geico", "progressive",
+    "unitedhealth", "anthem", "cigna", "aetna", "humana",
+    "wellsfargo", "chase", "bankofamerica", "citi",
+    "tforce", "olddominion", "estes", "saia", "yrc",
+    "coyote", "echo", "landstar", "totalquality",
+    "bizbuysell", "bbb", "manta", "dnb",
 ]
 
 class BusinessRecon:
     def __init__(self, gemini_api_key: Optional[str] = None):
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
 
+    def _is_enterprise(self, domain: str) -> bool:
+        """Check if a domain belongs to a known enterprise company."""
+        domain_clean = domain.lower().replace("www.", "").replace(".com", "").replace(".net", "").replace(".org", "")
+        return any(blocked in domain_clean for blocked in ENTERPRISE_BLOCKLIST)
+
     def search_duckduckgo(self, query: str, max_results: int = 5) -> List[Dict[str, str]]:
-        """Searches DuckDuckGo HTML to discover potential operational business domains."""
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+        """Searches DuckDuckGo to discover small, local businesses using duckduckgo-search."""
         results = []
-
         try:
-            resp = requests.get(url, headers=headers, timeout=10)
-            if resp.status_code != 200:
-                logger.warning(f"DuckDuckGo returned status {resp.status_code}")
-                return results
-
-            soup = BeautifulSoup(resp.text, "html.parser")
-            for link in soup.find_all("a", class_="result__url"):
-                href = link.get("href", "")
-                # DuckDuckGo wraps urls in /l/?uddg=
-                if "uddg=" in href:
-                    parsed = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
-                    actual_url = parsed.get("uddg", [None])[0]
-                else:
-                    actual_url = href
-
-                if not actual_url or "duckduckgo.com" in actual_url:
+            with DDGS() as ddgs:
+                ddgs_results = ddgs.text(query, max_results=max_results * 3)  # Overfetch to account for filtered domains
+            
+            for res in ddgs_results:
+                actual_url = res.get("href", "")
+                if not actual_url:
                     continue
 
                 domain_part = urllib.parse.urlparse(actual_url).netloc
-                # Exclude directories, job boards, and social media aggregates
-                skip_domains = ["linkedin.com", "facebook.com", "instagram.com", "indeed.com", "glassdoor.com", "wikipedia.org", "yelp.com", "yellowpages.com"]
+                
+                # Exclude directories, job boards, forums, social media, news, and aggregator sites
+                skip_domains = [
+                    # Social media
+                    "linkedin.com", "facebook.com", "instagram.com", "twitter.com", "tiktok.com",
+                    # Job boards
+                    "indeed.com", "glassdoor.com", "simplyhired.com", "ziprecruiter.com",
+                    "careerbuilder.com", "monster.com", "salary.com",
+                    # Directories & aggregators
+                    "yelp.com", "yellowpages.com", "zoominfo.com", "apollo.io",
+                    "crunchbase.com", "bbb.org", "manta.com", "dnb.com",
+                    "mapquest.com", "google.com", "apple.com",
+                    "thumbtack.com", "angi.com", "homeadvisor.com",
+                    "nextdoor.com", "clutch.co", "propertymanagementlist.com",
+                    # Forums & content sites
+                    "reddit.com", "quora.com", "youtube.com",
+                    "thetruckersreport.com", "truckingtruth.com",
+                    "freightwaves.com", "supplychaindive.com",
+                    # Listicle / review / comparison sites
+                    "transcure.net", "medibillmd.com", "g2.com", "capterra.com",
+                    "softwareadvice.com", "trustpilot.com",
+                    # News & encyclopedias
+                    "wikipedia.org", "forbes.com", "bloomberg.com",
+                ]
                 if any(skip in domain_part.lower() for skip in skip_domains):
                     continue
 
-                parent = link.find_parent("div", class_="result__body")
-                snippet = ""
-                title = ""
-                if parent:
-                    snippet_elem = parent.find("a", class_="result__snippet")
-                    if snippet_elem:
-                        snippet = snippet_elem.get_text(strip=True)
-                    title_elem = parent.find("a", class_="result__title")
-                    if title_elem:
-                        title = title_elem.get_text(strip=True)
+                # Skip known enterprise companies
+                if self._is_enterprise(domain_part):
+                    logger.info(f"⏩ Skipping enterprise company: {domain_part}")
+                    continue
 
                 base_url = f"{urllib.parse.urlparse(actual_url).scheme}://{domain_part}"
+                
+                # Check for duplicate domains in the current results
+                if any(r["url"] == base_url for r in results):
+                    continue
+                    
                 results.append({
-                    "title": title,
+                    "title": res.get("title", ""),
                     "url": base_url,
-                    "snippet": snippet
+                    "snippet": res.get("body", "")
                 })
 
                 if len(results) >= max_results:
