@@ -1,23 +1,25 @@
-name: Tuppli Agentic Lead Generation & Google Sheets Sync
+name: Tuppli Lead Generation Pipeline
 
 on:
   schedule:
-    # Runs daily at 09:00 UTC (4:00 AM EST)
-    - cron: '0 9 * * *'
+    # Runs daily at 10:00 AM UTC (6:00 AM EST)
+    # Timed so Gemini free-tier quota has fully reset
+    - cron: '0 10 * * *'
   workflow_dispatch:
     inputs:
       max_leads:
         description: 'Maximum leads to scrape and sync'
         required: false
-        default: '10'
+        default: '15'
       query_limit:
         description: 'Number of search queries to run'
         required: false
-        default: '3'
+        default: '10'
 
 jobs:
   scrape_and_sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout Repository
@@ -28,12 +30,12 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: scrapers/lead_gen/requirements.txt
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r scrapers/lead_gen/requirements.txt
-          playwright install chromium
 
       - name: Configure Google Service Account Key
         env:
@@ -44,8 +46,8 @@ jobs:
       - name: Run Lead Generation Pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID || '14k9pAVjqmWh6ukQo3S2JV2kdUkV-fazy8TnqkYI-1Zc' }}
+          SPREADSHEET_ID: '14k9pAVjqmWh6ukQo3S2JV2kdUkV-fazy8TnqkYI-1Zc'
         run: |
-          MAX_LEADS="${{ github.event.inputs.max_leads || '10' }}"
-          QUERIES="${{ github.event.inputs.query_limit || '3' }}"
+          MAX_LEADS="${{ github.event.inputs.max_leads || '15' }}"
+          QUERIES="${{ github.event.inputs.query_limit || '10' }}"
           python scrapers/lead_gen/run_pipeline.py --max "$MAX_LEADS" --queries "$QUERIES"
