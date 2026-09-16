@@ -15,6 +15,10 @@ on:
         description: 'Number of search queries to run'
         required: false
         default: '10'
+      city:
+        description: 'Target city override (e.g. Chicago, Dallas)'
+        required: false
+        default: ''
 
 jobs:
   scrape_and_sync:
@@ -47,7 +51,21 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SPREADSHEET_ID: '14k9pAVjqmWh6ukQo3S2JV2kdUkV-fazy8TnqkYI-1Zc'
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_WHATSAPP_NUMBER: ${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+          USER_WHATSAPP_NUMBER: ${{ secrets.USER_WHATSAPP_NUMBER }}
         run: |
           MAX_LEADS="${{ github.event.inputs.max_leads || '15' }}"
           QUERIES="${{ github.event.inputs.query_limit || '10' }}"
-          python scrapers/lead_gen/run_pipeline.py --max "$MAX_LEADS" --queries "$QUERIES"
+          CITY="${{ github.event.inputs.city }}"
+          
+          CMD="python scrapers/lead_gen/run_pipeline.py --max $MAX_LEADS --queries $QUERIES"
+          if [ -n "$CITY" ]; then
+            CMD="$CMD --city \"$CITY\""
+          fi
+          
+          echo "Executing: $CMD"
+          eval $CMD

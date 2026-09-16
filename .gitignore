@@ -83,3 +83,4 @@ patch_*.py
 force_*.js
 supabase/.temp/
 .vercel
+.local/

@@ -11,14 +11,18 @@ sys.path.append(os.path.dirname(__file__))
 from sheets_sync import SheetsSync
 from operational_icp_evaluator import OperationalICPEvaluator
 from business_recon import BusinessRecon, CITIES, BASE_QUERIES
+from whatsapp_notifier import WhatsAppNotifier
+from telegram_notifier import TelegramNotifier
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", force=True)
 logger = logging.getLogger("PipelineRunner")
 
-def run_lead_pipeline(max_leads: int = 5, query_limit: int = 2):
+def run_lead_pipeline(max_leads: int = 5, query_limit: int = 2, target_city: str = None):
     logger.info("=" * 60)
     logger.info("🚀 STARTING TUPPLI AGENTIC LEAD GENERATION PIPELINE")
     logger.info("Target: Companies in need of Custom Agentic Systems & ARE")
+    if target_city:
+        logger.info(f"Target City Override: {target_city}")
     logger.info("=" * 60)
 
     # 1. Initialize Google Sheets Sync
@@ -30,16 +34,20 @@ def run_lead_pipeline(max_leads: int = 5, query_limit: int = 2):
         logger.error(f"Cannot proceed without Google Sheets connection: {e}")
         return
 
-    # 2. Initialize Evaluator & Recon
+    # 2. Initialize Evaluator, Recon & Notifiers
     evaluator = OperationalICPEvaluator()
     recon = BusinessRecon()
+    notifier = WhatsAppNotifier()
+    tg_notifier = TelegramNotifier()
 
     leads_added = 0
+    best_lead = None
+    cities_to_search = [target_city] if target_city else CITIES
 
     # 3. Search and process targets
     queries_run = 0
     for base_query in BASE_QUERIES:
-        for city in CITIES:
+        for city in cities_to_search:
             if leads_added >= max_leads or queries_run >= query_limit:
                 break
 
@@ -120,16 +128,38 @@ def run_lead_pipeline(max_leads: int = 5, query_limit: int = 2):
                     existing.add(domain)
                     existing.add(company_name.lower())
                     leads_added += 1
+                    if not best_lead or score > best_lead.get("icp_score", 0):
+                        best_lead = lead_record
                     logger.info(f"✅ Lead Successfully Synced! Total added this run: {leads_added}/{max_leads}")
 
     logger.info("\n" + "=" * 60)
     logger.info(f"🏁 PIPELINE RUN COMPLETE. Total New Leads Synced to Sheet: {leads_added}")
     logger.info("=" * 60)
 
+    # 4. Send Notifications (Telegram & WhatsApp if configured)
+    try:
+        tg_notifier.send_run_summary(
+            total_added=leads_added,
+            target_city=target_city,
+            top_lead=best_lead
+        )
+    except Exception as e:
+        logger.warning(f"Failed to deliver Telegram summary: {e}")
+
+    try:
+        notifier.send_run_summary(
+            total_added=leads_added,
+            target_city=target_city,
+            top_lead=best_lead
+        )
+    except Exception as e:
+        logger.warning(f"Failed to deliver WhatsApp summary: {e}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Tuppli Agentic Lead Generation Runner")
     parser.add_argument("--max", type=int, default=5, help="Max leads to add in this run")
     parser.add_argument("--queries", type=int, default=3, help="Number of search queries to execute")
+    parser.add_argument("--city", type=str, default=None, help="Target city override (e.g. Chicago, Dallas)")
     args = parser.parse_args()
 
-    run_lead_pipeline(max_leads=args.max, query_limit=args.queries)
+    run_lead_pipeline(max_leads=args.max, query_limit=args.queries, target_city=args.city)
